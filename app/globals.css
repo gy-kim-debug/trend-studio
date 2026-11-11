@@ -126,3 +126,11 @@
 .image-brief a{display:flex;align-items:center;gap:5px;font-size:11px;color:#2759b8;text-decoration:underline}
 .image-pending{font-size:10px;color:#955d15;font-weight:800}
 @media(max-width:760px){.import-buttons{display:grid;grid-template-columns:1fr}.import-buttons button{width:100%}}
+
+/* Production lifecycle badges in the daily trend radar. */
+.trend-status-line{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.trend-status-line h3{flex:1;min-width:0}
+.production-status{white-space:nowrap;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:800;background:#eef1f5;color:#55616d}
+.production-in_progress{background:#fff3d8;color:#8e650f}.production-completed{background:#e8f8ee;color:#26764a}.production-failed{background:#fff0ef;color:#aa4034}
+.trend-apply:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:760px){.trend-status-line{flex-wrap:wrap}.production-status{font-size:10px}}

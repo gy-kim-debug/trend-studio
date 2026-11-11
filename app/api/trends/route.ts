@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   if (!await authorized(req)) return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
   const db = database();
   if (!db) return NextResponse.json({ error: '데이터베이스 설정이 필요합니다.' }, { status: 503 });
-  const { data, error } = await db.from('trend_candidates').select('id,title,category,summary,why_now,buzz_score,value_score,source_urls,draft,created_at').order('created_at', { ascending: false }).limit(30);
+  const { data, error } = await db.from('trend_candidates').select('id,title,category,summary,why_now,buzz_score,value_score,source_urls,draft,created_at,production_status,linked_draft_id').order('created_at', { ascending: false }).limit(30);
   if (error) return NextResponse.json({ error: '트렌드 후보 테이블을 확인해주세요.' }, { status: 500 });
   return NextResponse.json({ trends: data });
 }
