@@ -1,6 +1,6 @@
 export type Slide = {
   kicker: string; title: string; body: string;
-  imagePath?: string; imageUrl?: string; layout?: 'text' | 'image' | 'split';
+  imagePath?: string; imageUrl?: string; layout?: 'text' | 'image' | 'split'; imageFit?: 'contain' | 'cover';
   imageMode?: 'none' | 'official_image' | 'ai_concept';
   imagePrompt?: string; imageSourceUrl?: string; imageNote?: string;
 };
@@ -32,6 +32,7 @@ export function parseCardDraft(input: unknown): CardDraft {
       body: text(slide.body, `${i + 1}번 본문`, 350),
       ...(typeof slide.imagePath === 'string' && /^cards\/[a-f0-9-]{36}\.(png|jpg|webp)$/.test(slide.imagePath) ? { imagePath: slide.imagePath } : {}),
       layout: (slide.layout === 'image' || slide.layout === 'split' ? slide.layout : 'text') as Slide['layout'],
+      imageFit: slide.imageFit === 'cover' ? 'cover' : 'contain',
       imageMode: (slide.imageMode === 'official_image' || slide.imageMode === 'ai_concept' ? slide.imageMode : 'none') as Slide['imageMode'],
       imagePrompt: typeof slide.imagePrompt === 'string' ? slide.imagePrompt.slice(0, 1200) : '',
       imageSourceUrl: typeof slide.imageSourceUrl === 'string' && /^https:\/\//.test(slide.imageSourceUrl) ? slide.imageSourceUrl.slice(0, 2048) : '',

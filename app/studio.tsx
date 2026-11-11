@@ -10,6 +10,7 @@ import { CardDraft, parseCardDraft, parseImportBundle, Slide } from '@/lib/conte
 type Theme = 'midnight' | 'paper' | 'citrus';
 type ShareKind = 'one' | 'all';
 type PreparedShare = { kind: ShareKind; signature: string; files: File[] };
+type RenderedPreview = { signature: string; url: string; blob: Blob };
 type TrendRow = { id: string; title: string; category: string; summary: string; why_now: string; buzz_score: number; value_score: number; source_urls: string[]; draft: CardDraft; created_at: string; production_status?: 'unmade' | 'in_progress' | 'completed' | 'failed'; linked_draft_id?: string | null };
 type StudioView = 'trends' | 'drafts' | 'editor';
 type PublishStatus = 'review' | 'ready' | 'published' | 'held';
@@ -43,7 +44,7 @@ function Card({ slide, index, total, theme, category, brand, capture = false }: 
     <article className={`news-card theme-${theme} ${index === 0 ? 'cover-card' : 'body-card'} ${visual ? `visual-card visual-${slide.layout}` : ''}`} data-capture={capture ? 'true' : undefined}>
       <div className="card-shape shape-one" /><div className="card-shape shape-two" />
       <div className="card-top"><span className="card-tag">{category || 'TREND'}</span><span className="card-number">{String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div>
-      {visual && <div className="card-media"><img src={slide.imageUrl} alt="카드에 첨부한 이미지" crossOrigin="anonymous" /></div>}
+      {visual && <div className="card-media"><img src={slide.imageUrl} alt="카드에 첨부한 이미지" crossOrigin="anonymous" style={{ objectFit: slide.imageFit ?? 'contain' }} /></div>}
       <div className="card-content">
         <div className="card-rule" /><p className="card-kicker">{slide.kicker || 'THE STORY'}</p>
         <h2>{slide.title || '제목을 입력하세요'}</h2>
@@ -66,6 +67,8 @@ export default function Studio() {
   const [brand, setBrand] = useState('TREND BRIEF');
   const [busy, setBusy] = useState(false);
   const [preparedShare, setPreparedShare] = useState<PreparedShare | null>(null);
+  const [renderedPreview, setRenderedPreview] = useState<RenderedPreview | null>(null);
+  const [renderingPreview, setRenderingPreview] = useState(false);
   const [progress, setProgress] = useState('');
   const [notice, setNotice] = useState('');
   const [jsonText, setJsonText] = useState('');
@@ -93,6 +96,8 @@ export default function Studio() {
   const [uploadBusy, setUploadBusy] = useState(false);
   const captureRefs = useRef<(HTMLDivElement | null)[]>([]);
   const shareSignature = JSON.stringify({ slides, selected, theme, category, brand });
+
+  useEffect(() => () => { if (renderedPreview) URL.revokeObjectURL(renderedPreview.url); }, [renderedPreview]);
 
   useEffect(() => {
     if (!adminClient) { setAuthChecking(false); return; }
@@ -323,7 +328,7 @@ export default function Studio() {
       // even when the image is fully loaded. Paint the original media directly
       // on the exported PNG with Canvas so the photo cannot silently disappear.
       if (needsImage && image && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
-        return await withTimeout(compositeSafariImage(blob, image, element, i === 0), `${i + 1}번 카드 Safari 이미지 합성 시간이 초과되었습니다.`);
+        return await withTimeout(compositeSafariImage(blob, image, element), `${i + 1}번 카드 Safari 이미지 합성 시간이 초과되었습니다.`);
       }
       return blob;
     } finally {
@@ -331,7 +336,7 @@ export default function Studio() {
     }
   }
 
-  async function compositeSafariImage(baseBlob: Blob, source: HTMLImageElement, captureRoot: HTMLElement, cover: boolean): Promise<Blob> {
+  async function compositeSafariImage(baseBlob: Blob, source: HTMLImageElement, captureRoot: HTMLElement): Promise<Blob> {
     const canvas = document.createElement('canvas');
     canvas.width = 1080; canvas.height = 1350;
     const ctx = canvas.getContext('2d');
@@ -345,18 +350,17 @@ export default function Studio() {
       const cardRect = captureRoot.querySelector('.news-card')?.getBoundingClientRect();
       const mediaRect = source.getBoundingClientRect();
       if (!cardRect || !mediaRect.width || !mediaRect.height) throw new Error('이미지 배치 영역을 찾지 못했습니다.');
-      let x = mediaRect.left - cardRect.left;
-      let y = mediaRect.top - cardRect.top;
-      let width = mediaRect.width;
-      let height = mediaRect.height;
-      // Cover card has a full-bleed image behind text. Keep its top label and
-      // lower title readable by placing the photo in the central illustration zone.
-      if (cover) { x = 75; y = 175; width = 930; height = 560; }
+      const x = mediaRect.left - cardRect.left;
+      const y = mediaRect.top - cardRect.top;
+      const width = mediaRect.width;
+      const height = mediaRect.height;
       ctx.save();
       ctx.beginPath();
       ctx.rect(x, y, width, height);
       ctx.clip();
-      const scale = Math.min(width / source.naturalWidth, height / source.naturalHeight);
+      const scale = getComputedStyle(source).objectFit === 'cover'
+        ? Math.max(width / source.naturalWidth, height / source.naturalHeight)
+        : Math.min(width / source.naturalWidth, height / source.naturalHeight);
       const drawW = source.naturalWidth * scale;
       const drawH = source.naturalHeight * scale;
       ctx.drawImage(source, x + (width - drawW) / 2, y + (height - drawH) / 2, drawW, drawH);
@@ -371,13 +375,27 @@ export default function Studio() {
     anchor.href = dataUrl; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove();
   }
 
+  async function previewActualPng() {
+    setRenderingPreview(true); setNotice('실제 저장 PNG 미리보기 생성 중...');
+    const signature = shareSignature;
+    try {
+      const styles = await fontStyles();
+      const blob = await renderSlide(selected, styles);
+      const url = URL.createObjectURL(blob);
+      setRenderedPreview({ signature, url, blob });
+      setNotice('이 화면은 실제 PNG 저장 결과와 동일합니다. 수정하면 미리보기를 다시 생성해주세요.');
+    } catch (error) { setNotice(`실제 PNG 미리보기 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`); }
+    finally { setRenderingPreview(false); }
+  }
+
   async function downloadOne() {
     setBusy(true); setNotice('');
     setProgress('폰트 준비 중...');
     try {
-      const styles = await fontStyles();
+      const cached = renderedPreview?.signature === shareSignature ? renderedPreview.blob : null;
+      const styles = cached ? '' : await fontStyles();
       setProgress('PNG 생성 중...');
-      const blob = await renderSlide(selected, styles);
+      const blob = cached ?? await renderSlide(selected, styles);
       const url = URL.createObjectURL(blob);
       download(url, fileName(selected));
       window.setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -519,11 +537,11 @@ export default function Studio() {
         <div className="slide-section-title"><span>카드 구성</span><span>{slides.length} / 8 SLIDES</span></div><div className="slide-tabs">{slides.map((slide, i) => <button key={i} className={i === selected ? 'active' : ''} onClick={() => setSelected(i)}><span>{String(i + 1).padStart(2, '0')}</span><small>{i === 0 ? '표지' : i === slides.length - 1 ? '마무리' : '본문'}</small></button>)}</div>
         <div className="slide-controls"><button disabled={slides.length >= 8} onClick={addSlide}><Plus size={15}/> 카드 추가</button><button disabled={slides.length <= 4} onClick={removeSlide}><Trash2 size={15}/> 현재 카드 삭제</button></div>
         <div className="edit-fields"><label>상단 라벨<input maxLength={35} value={slides[selected].kicker} onChange={e => updateSlide('kicker', e.target.value)}/></label><label>카드 제목<textarea rows={3} maxLength={110} value={slides[selected].title} onChange={e => updateSlide('title', e.target.value)}/><span className="character-count">{slides[selected].title.length} / 110</span></label><label>본문 내용<textarea rows={6} maxLength={350} value={slides[selected].body} onChange={e => updateSlide('body', e.target.value)}/><span className="character-count">{slides[selected].body.length} / 350</span></label></div>
-        <div className="media-editor"><strong><ImagePlus size={16}/> 카드 이미지</strong>{slides[selected].imageMode && slides[selected].imageMode !== 'none' && <div className="image-brief"><strong>{slides[selected].imageMode === 'ai_concept' ? '🎨 AI 콘셉트 이미지 추천' : '📷 실제 이미지 추천 · 권리 확인 필요'}</strong>{slides[selected].imagePrompt && <p>제작 제안: {slides[selected].imagePrompt}</p>}{slides[selected].imageNote && <p>검토 사항: {slides[selected].imageNote}</p>}{slides[selected].imageSourceUrl && <a href={slides[selected].imageSourceUrl} rel="noopener noreferrer" target="_blank">참고 이미지 출처 열기 <ExternalLink size={12}/></a>}{!slides[selected].imagePath && <span className="image-pending">이미지 파일 준비 전 · 실제 파일을 확인하고 업로드하세요.</span>}</div>}<p>직접 촬영했거나 사용 권한이 있는 이미지를 업로드하세요. PNG·JPG·WebP, 최대 8MB.</p><label className="upload-trigger">{uploadBusy ? '업로드 중...' : '이미지 선택 / 업로드'}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={!signedInEmail || uploadBusy} onChange={event => { void uploadImage(event.target.files?.[0]); event.target.value = ''; }}/></label><label>이미지와 글 배치<select value={slides[selected].layout ?? 'text'} onChange={event => updateSlide('layout', event.target.value)}><option value="text">텍스트 중심</option><option value="image" disabled={!slides[selected].imageUrl}>이미지 강조형</option><option value="split" disabled={!slides[selected].imageUrl}>균형형 (이미지 + 텍스트)</option></select></label>{slides[selected].imagePath && <button className="remove-image" onClick={() => setSlides(current => current.map((slide, i) => i === selected ? { ...slide, imagePath: undefined, imageUrl: undefined, layout: 'text' } : slide))}>이 카드에서 이미지 제거</button>}</div>
+        <div className="media-editor"><strong><ImagePlus size={16}/> 카드 이미지</strong>{slides[selected].imageMode && slides[selected].imageMode !== 'none' && <div className="image-brief"><strong>{slides[selected].imageMode === 'ai_concept' ? '🎨 AI 콘셉트 이미지 추천' : '📷 실제 이미지 추천 · 권리 확인 필요'}</strong>{slides[selected].imagePrompt && <p>제작 제안: {slides[selected].imagePrompt}</p>}{slides[selected].imageNote && <p>검토 사항: {slides[selected].imageNote}</p>}{slides[selected].imageSourceUrl && <a href={slides[selected].imageSourceUrl} rel="noopener noreferrer" target="_blank">참고 이미지 출처 열기 <ExternalLink size={12}/></a>}{!slides[selected].imagePath && <span className="image-pending">이미지 파일 준비 전 · 실제 파일을 확인하고 업로드하세요.</span>}</div>}<p>직접 촬영했거나 사용 권한이 있는 이미지를 업로드하세요. PNG·JPG·WebP, 최대 8MB.</p><label className="upload-trigger">{uploadBusy ? '업로드 중...' : '이미지 선택 / 업로드'}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={!signedInEmail || uploadBusy} onChange={event => { void uploadImage(event.target.files?.[0]); event.target.value = ''; }}/></label><label>사진 맞춤<select value={slides[selected].imageFit ?? 'contain'} onChange={event => updateSlide('imageFit', event.target.value)}><option value="contain">전체 보기 (잘리지 않음)</option><option value="cover">영역 채우기 (일부 잘릴 수 있음)</option></select></label><label>이미지와 글 배치<select value={slides[selected].layout ?? 'text'} onChange={event => updateSlide('layout', event.target.value)}><option value="text">텍스트 중심</option><option value="image" disabled={!slides[selected].imageUrl}>이미지 강조형</option><option value="split" disabled={!slides[selected].imageUrl}>균형형 (이미지 + 텍스트)</option></select></label>{slides[selected].imagePath && <button className="remove-image" onClick={() => setSlides(current => current.map((slide, i) => i === selected ? { ...slide, imagePath: undefined, imageUrl: undefined, layout: 'text' } : slide))}>이 카드에서 이미지 제거</button>}</div>
         <div className="editor-actions"><button onClick={() => { setSlides(initialSlides); setCategory('TECH / AI'); setBrand('TREND BRIEF'); setSelected(0); setNotice('샘플 콘텐츠로 복원했습니다.'); }}><RotateCcw size={15}/> 초기화</button><button onClick={copyContent}><Copy size={15}/> 원고 복사</button></div>
         <div className="instagram-publish-panel"><div className="instagram-publish-head"><div><strong>인스타 게시 준비</strong><p>개인 계정은 최종 업로드를 직접 완료해야 합니다. 먼저 현재 원고를 저장하세요.</p></div><span className={`publish-status publish-${publishStatus}`}>{publishLabels[publishStatus]}</span></div><div className="instagram-publish-actions"><button onClick={copyCaption}><Copy size={15}/> ① 캡션·해시태그 복사</button><button disabled={busy} onClick={() => sharePhotos('all')}><Share2 size={15}/> ② {readyToShare('all') ? '사진 공유 메뉴 열기' : `${slides.length}장 사진 공유 준비`}</button><button disabled={busy} onClick={downloadAll}><ArrowDownToLine size={15}/> 공유가 안 되면 ZIP 저장</button></div><p className="instagram-publish-help">휴대폰 공유 메뉴가 여러 장 선택을 지원하지 않을 수도 있어요. 그때는 ZIP을 내려받아 사진으로 저장한 뒤 Instagram 앱에서 순서대로 선택하세요. 캡션은 붙여넣으면 됩니다.</p><div className="instagram-publish-status"><button disabled={!currentDraftId || publishBusy} onClick={() => void changePublishStatus('ready')}>게시 준비 완료</button><button disabled={!currentDraftId || publishBusy || publishStatus !== 'ready'} onClick={() => void changePublishStatus('published')}>인스타에 게시했어요</button><button disabled={!currentDraftId || publishBusy} onClick={() => void changePublishStatus('held')}>보류</button></div>{!currentDraftId && <small>게시 상태 저장은 ‘현재 초안 저장’ 후 사용할 수 있습니다.</small>}{publishStatus === 'published' && <small>실제 인스타그램 게시 여부는 자동 검증되지 않습니다.</small>}</div><div className="caption-editor"><h3>인스타 게시글</h3><p>카드뉴스와 함께 올릴 캡션 및 해시태그를 수정하고 복사하세요.</p><label>게시글 내용<textarea rows={8} maxLength={2200} placeholder="ChatGPT가 작성한 인스타 캡션을 입력하세요." value={caption} onChange={event => setCaption(event.target.value)}/></label><label>해시태그<textarea rows={3} maxLength={500} placeholder="#오늘의트렌드 #트렌드" value={hashtags} onChange={event => setHashtags(event.target.value)}/></label><button onClick={copyCaption}><Copy size={15}/> 인스타 게시글 복사</button></div>
       </aside>
-      <section className="panel preview-panel"><div className="panel-heading preview-title"><div><span className="step-label">02 / LIVE PREVIEW</span><h2>실시간 미리보기</h2><p>1080 × 1350px · Instagram 4:5</p></div><span className="preview-live"><span/> LIVE</span></div><div className="preview-stage"><div className="preview-card-wrap"><Card slide={slides[selected]} index={selected} total={slides.length} theme={theme} category={category} brand={brand}/></div></div><div className="preview-navigation"><button aria-label="이전 카드" onClick={() => setSelected(i => Math.max(0, i - 1))} disabled={selected === 0}><ArrowLeft size={17}/></button><div className="navigation-dots">{slides.map((_, i) => <button key={i} aria-label={`${i + 1}번 카드`} className={i === selected ? 'active' : ''} onClick={() => setSelected(i)}/>)}</div><button aria-label="다음 카드" onClick={() => setSelected(i => Math.min(slides.length - 1, i + 1))} disabled={selected === slides.length - 1}><ArrowRight size={17}/></button></div><div className="preview-export-actions"><button className="secondary-download" disabled={busy} onClick={() => sharePhotos('one')}><Share2 size={16}/>{readyToShare('one') ? '현재 카드 공유 메뉴 열기' : '현재 카드 사진 공유 준비'}</button><button className="secondary-download" disabled={busy} onClick={downloadOne}><ArrowDownToLine size={16}/> 현재 카드 PNG 다운로드</button></div></section>
+      <section className="panel preview-panel"><div className="panel-heading preview-title"><div><span className="step-label">02 / LIVE PREVIEW</span><h2>실시간 미리보기</h2><p>1080 × 1350px · Instagram 4:5</p></div><span className="preview-live"><span/> LIVE</span></div><div className="preview-stage"><div className="preview-card-wrap">{renderedPreview?.signature === shareSignature ? <img className="actual-png-preview" src={renderedPreview.url} alt="실제 저장되는 1080 x 1350 PNG 미리보기" /> : <Card slide={slides[selected]} index={selected} total={slides.length} theme={theme} category={category} brand={brand}/>}</div></div><div className="preview-mode-note">{renderedPreview?.signature === shareSignature ? '✅ 실제 저장 PNG · 1080 × 1350px · 화면에 맞게 축소 표시' : '편집용 CSS 미리보기 · 실제 저장 결과를 확인하려면 아래 버튼을 눌러주세요.'}</div><button className="actual-preview-button" disabled={busy || renderingPreview} onClick={() => void previewActualPng()}>{renderingPreview ? '실제 PNG 생성 중...' : '실제 PNG 미리보기 생성'}</button><div className="preview-navigation"><button aria-label="이전 카드" onClick={() => setSelected(i => Math.max(0, i - 1))} disabled={selected === 0}><ArrowLeft size={17}/></button><div className="navigation-dots">{slides.map((_, i) => <button key={i} aria-label={`${i + 1}번 카드`} className={i === selected ? 'active' : ''} onClick={() => setSelected(i)}/>)}</div><button aria-label="다음 카드" onClick={() => setSelected(i => Math.min(slides.length - 1, i + 1))} disabled={selected === slides.length - 1}><ArrowRight size={17}/></button></div><div className="preview-export-actions"><button className="secondary-download" disabled={busy} onClick={() => sharePhotos('one')}><Share2 size={16}/>{readyToShare('one') ? '현재 카드 공유 메뉴 열기' : '현재 카드 사진 공유 준비'}</button><button className="secondary-download" disabled={busy} onClick={downloadOne}><ArrowDownToLine size={16}/> 현재 카드 PNG 다운로드</button></div></section>
       <aside className="panel style-panel"><div className="panel-heading"><span className="step-label">03 / DESIGN SYSTEM</span><h2>디자인 스타일</h2><p>콘텐츠에 맞는 무드를 선택하세요.</p></div><div className="themes">{themes.map(item => <button key={item.id} className={`theme-option ${theme === item.id ? 'active' : ''}`} onClick={() => setTheme(item.id)}><span className="theme-swatches">{item.colors.map(color => <span key={color} style={{ background: color }}/>)}</span><span className="theme-info"><strong>{item.name}</strong><small>{item.description}</small></span>{theme === item.id ? <span className="selected-check"><Check size={14}/></span> : <ChevronDown className="choose-arrow" size={15}/>}</button>)}</div><div className="info-card"><Sparkles size={18}/><strong>DESIGN TIP</strong><p>표지는 큰 제목 중심으로, 나머지 카드는 이미지와 한 가지 핵심 정보만 담아보세요.</p></div><div className="export-summary"><span>EXPORT SETTINGS</span><div><span>Format</span><strong>PNG</strong></div><div><span>Resolution</span><strong>1080 × 1350</strong></div><div><span>Cards</span><strong>{slides.length} slides</strong></div><div><span>Bundle</span><strong>ZIP archive</strong></div></div></aside>
     </section>}<footer className="footer"><span>© 2026 Trend Studio. Built for stories worth sharing.</span><span>뉴스의 사실 관계와 저작권은 게시 전 확인해주세요.</span></footer>{notice && <div className="toast" role="status">{notice}<button onClick={() => setNotice('')} aria-label="알림 닫기">×</button></div>}
     <div className="capture-container" aria-hidden="true">{slides.map((slide, i) => <div className="capture-item" key={i} ref={el => { captureRefs.current[i] = el; }}><Card slide={slide} index={i} total={slides.length} theme={theme} category={category} brand={brand} capture/></div>)}</div>
