@@ -98,7 +98,7 @@
 .capture-item .news-card.cover-card.visual-card .card-content h2{font-size:82px;line-height:1.16}
 @media(max-width:760px){.slide-controls button{flex:1}.news-card.cover-card .card-content h2{font-size:clamp(34px,9vw,50px)}.news-card.visual-card .card-content h2{font-size:clamp(22px,6vw,31px)}.news-card.visual-card .card-body{font-size:clamp(10px,3vw,14px)}}
 
-/* Full-bleed cover is opt-in: first slide with the image-emphasis layout. */
+/* Full-bleed cover is an explicit first-slide layout; other image layouts stay inline. */
 .news-card.cover-card.cover-background .card-media,
 .capture-item .news-card.cover-card.cover-background .card-media{position:absolute;inset:0;width:100%;height:100%;border-radius:0;margin:0;z-index:0;opacity:.85}
 .news-card.cover-card.cover-background .card-media img{object-fit:cover}
