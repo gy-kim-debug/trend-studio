@@ -40,11 +40,12 @@ const adminClient: SupabaseClient | null = authUrl && authKey
 
 function Card({ slide, index, total, theme, category, brand, capture = false }: { slide: Slide; index: number; total: number; theme: Theme; category: string; brand: string; capture?: boolean }) {
   const visual = Boolean(slide.imageUrl && slide.layout !== 'text');
+  const backgroundCover = visual && index === 0 && slide.layout === 'image';
   return (
-    <article className={`news-card theme-${theme} ${index === 0 ? 'cover-card' : 'body-card'} ${visual ? `visual-card visual-${slide.layout}` : ''}`} data-capture={capture ? 'true' : undefined}>
+    <article className={`news-card theme-${theme} ${index === 0 ? 'cover-card' : 'body-card'} ${visual ? `visual-card visual-${slide.layout}` : ''} ${backgroundCover ? 'cover-background' : ''}`} data-capture={capture ? 'true' : undefined}>
       <div className="card-shape shape-one" /><div className="card-shape shape-two" />
       <div className="card-top"><span className="card-tag">{category || 'TREND'}</span><span className="card-number">{String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div>
-      {visual && <div className="card-media"><img src={slide.imageUrl} alt="카드에 첨부한 이미지" crossOrigin="anonymous" style={{ objectFit: slide.imageFit ?? 'contain' }} /></div>}
+      {visual && <div className="card-media"><img src={slide.imageUrl} alt="카드에 첨부한 이미지" crossOrigin="anonymous" style={{ objectFit: backgroundCover ? 'cover' : (slide.imageFit ?? 'contain') }} /></div>}
       <div className="card-content">
         <div className="card-rule" /><p className="card-kicker">{slide.kicker || 'THE STORY'}</p>
         <h2>{slide.title || '제목을 입력하세요'}</h2>
@@ -328,7 +329,7 @@ export default function Studio() {
       // even when the image is fully loaded. Paint the original media directly
       // on the exported PNG with Canvas so the photo cannot silently disappear.
       if (needsImage && image && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
-        return await withTimeout(compositeSafariImage(blob, image, element), `${i + 1}번 카드 Safari 이미지 합성 시간이 초과되었습니다.`);
+        return await withTimeout(compositeSafariImage(blob, image, element, fontEmbedCSS), `${i + 1}번 카드 Safari 이미지 합성 시간이 초과되었습니다.`);
       }
       return blob;
     } finally {
@@ -336,7 +337,7 @@ export default function Studio() {
     }
   }
 
-  async function compositeSafariImage(baseBlob: Blob, source: HTMLImageElement, captureRoot: HTMLElement): Promise<Blob> {
+  async function compositeSafariImage(baseBlob: Blob, source: HTMLImageElement, captureRoot: HTMLElement, fontEmbedCSS: string): Promise<Blob> {
     const canvas = document.createElement('canvas');
     canvas.width = 1080; canvas.height = 1350;
     const ctx = canvas.getContext('2d');
@@ -363,8 +364,37 @@ export default function Studio() {
         : Math.min(width / source.naturalWidth, height / source.naturalHeight);
       const drawW = source.naturalWidth * scale;
       const drawH = source.naturalHeight * scale;
+      const backgroundCover = Boolean(source.closest('.cover-background'));
+      ctx.globalAlpha = backgroundCover ? 0.85 : 1;
       ctx.drawImage(source, x + (width - drawW) / 2, y + (height - drawH) / 2, drawW, drawH);
       ctx.restore();
+      if (backgroundCover) {
+        // Safari's manual photo composite must restore the gradient and labels above it.
+        const shade = ctx.createLinearGradient(0, 0, 0, 1350);
+        shade.addColorStop(0, '#0c1735a0');
+        shade.addColorStop(0.28, '#0c173500');
+        shade.addColorStop(0.58, '#0c173575');
+        shade.addColorStop(1, '#0c1735ef');
+        ctx.fillStyle = shade;
+        ctx.fillRect(0, 0, 1080, 1350);
+        for (const selector of ['.card-top', '.card-content', '.card-bottom']) {
+          const section = captureRoot.querySelector<HTMLElement>(selector);
+          if (!section) continue;
+          const rect = section.getBoundingClientRect();
+          if (!rect.width || !rect.height) continue;
+          const overlay = await toBlob(section, {
+            pixelRatio: 1, width: Math.ceil(rect.width), height: Math.ceil(rect.height), fontEmbedCSS,
+          });
+          if (!overlay) throw new Error('Safari 표지 글자 합성에 실패했습니다.');
+          const overlayUrl = URL.createObjectURL(overlay);
+          try {
+            const layer = new Image();
+            layer.src = overlayUrl;
+            await layer.decode();
+            ctx.drawImage(layer, rect.left - cardRect.left, rect.top - cardRect.top, rect.width, rect.height);
+          } finally { URL.revokeObjectURL(overlayUrl); }
+        }
+      }
       const result = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Safari 합성 PNG 생성에 실패했습니다.')), 'image/png'));
       return result;
     } finally { URL.revokeObjectURL(baseUrl); }
