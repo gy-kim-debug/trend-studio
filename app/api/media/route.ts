@@ -23,3 +23,17 @@ export async function POST(req: NextRequest) {
   if (!data) return NextResponse.json({ error: '이미지 접근 링크를 만들지 못했습니다.' }, { status: 500 });
   return NextResponse.json({ imagePath, imageUrl: data.signedUrl });
 }
+
+/** Return a private uploaded card image to the signed-in editor for lossless PNG capture. */
+export async function GET(req: NextRequest) {
+  if (!await authorized(req)) return NextResponse.json({ error: '관리자 인증이 필요합니다.' }, { status: 401 });
+  const path = req.nextUrl.searchParams.get('path') ?? '';
+  if (!/^cards\/[a-f0-9-]{36}\.(png|jpg|webp)$/.test(path)) return NextResponse.json({ error: '이미지 경로가 올바르지 않습니다.' }, { status: 400 });
+  const db = database();
+  if (!db) return NextResponse.json({ error: '저장소 연결이 필요합니다.' }, { status: 503 });
+  const { data, error } = await db.storage.from(MEDIA_BUCKET).download(path);
+  if (error || !data) return NextResponse.json({ error: '이미지를 불러오지 못했습니다.' }, { status: 404 });
+  const body = await data.arrayBuffer();
+  const contentType = path.endsWith('.png') ? 'image/png' : path.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+  return new NextResponse(body, { headers: { 'Content-Type': contentType, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
+}

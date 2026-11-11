@@ -289,12 +289,40 @@ export default function Studio() {
   async function renderSlide(i: number, fontEmbedCSS: string) {
     const element = captureRefs.current[i];
     if (!element) throw new Error('이미지 렌더링 요소를 찾을 수 없습니다.');
-    const blob = await withTimeout(
-      toBlob(element, { pixelRatio: 1, width: 1080, height: 1350, fontEmbedCSS }),
-      `${i + 1}번 카드의 렌더링 시간이 초과되었습니다.`,
-    );
-    if (!blob) throw new Error(`${i + 1}번 카드의 이미지 생성에 실패했습니다.`);
-    return blob;
+    const slide = slides[i];
+    const image = element.querySelector<HTMLImageElement>('.card-media img');
+    const needsImage = Boolean(slide.imagePath && slide.layout !== 'text');
+    if (needsImage && !image) throw new Error(`${i + 1}번 카드의 이미지 요소가 없습니다.`);
+    const originalSrc = image?.getAttribute('src') ?? '';
+    try {
+      if (needsImage && image) {
+        // html-to-image may silently omit cross-origin signed images. Embed authenticated
+        // image bytes into the capture element before cloning it to SVG/PNG.
+        const response = await withTimeout(fetch(`/api/media?path=${encodeURIComponent(slide.imagePath!)}`, {
+          headers: await authHeader(), cache: 'no-store',
+        }), `${i + 1}번 카드 이미지 요청이 지연되고 있습니다.`);
+        if (!response.ok) throw new Error(`${i + 1}번 카드 이미지를 불러오지 못했습니다. 다시 로그인 후 시도해주세요.`);
+        const file = await response.blob();
+        if (!file.type.startsWith('image/') || file.size === 0) throw new Error(`${i + 1}번 카드 이미지 파일이 비어 있습니다.`);
+        const embedded = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('이미지 변환 오류'));
+          reader.onerror = () => reject(new Error('이미지 변환 오류'));
+          reader.readAsDataURL(file);
+        });
+        image.src = embedded;
+        await withTimeout(image.decode(), `${i + 1}번 카드 이미지 로딩 시간이 초과되었습니다.`);
+        if (!image.naturalWidth || !image.naturalHeight) throw new Error(`${i + 1}번 카드 이미지가 손상되었습니다.`);
+      }
+      const blob = await withTimeout(
+        toBlob(element, { pixelRatio: 1, width: 1080, height: 1350, fontEmbedCSS, cacheBust: true }),
+        `${i + 1}번 카드의 렌더링 시간이 초과되었습니다.`,
+      );
+      if (!blob) throw new Error(`${i + 1}번 카드의 이미지 생성에 실패했습니다.`);
+      return blob;
+    } finally {
+      if (image && needsImage) image.src = originalSrc;
+    }
   }
 
   function download(dataUrl: string, filename: string) {
