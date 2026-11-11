@@ -98,19 +98,19 @@
 .capture-item .news-card.cover-card.visual-card .card-content h2{font-size:82px;line-height:1.16}
 @media(max-width:760px){.slide-controls button{flex:1}.news-card.cover-card .card-content h2{font-size:clamp(34px,9vw,50px)}.news-card.visual-card .card-content h2{font-size:clamp(22px,6vw,31px)}.news-card.visual-card .card-body{font-size:clamp(10px,3vw,14px)}}
 
-/* Show the entire cover image without cropping it into a narrow strip. */
-.news-card.cover-card.visual-card .card-media,
-.capture-item .news-card.cover-card.visual-card .card-media{position:absolute;inset:0;width:100%;height:100%;border-radius:0;margin:0;z-index:0;opacity:.85}
-.news-card.cover-card.visual-card .card-media img{object-fit:contain}
-.news-card.cover-card.visual-card .card-media::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,#0c1735a0 0%,transparent 28%,#0c173575 58%,#0c1735ef 100%)}
-.news-card.cover-card.visual-card .card-top,.news-card.cover-card.visual-card .card-bottom,.news-card.cover-card.visual-card .card-content{position:relative;z-index:1;color:#fff}
-.news-card.cover-card.visual-card .card-content{justify-content:flex-end;flex:1}
-.news-card.cover-card.visual-card .card-kicker{color:#bcd0ff}
-.news-card.cover-card.visual-card .card-content h2{font-size:clamp(34px,4vw,58px);text-shadow:0 3px 20px #0c142b99}
-.capture-item .news-card.cover-card.visual-card .card-content h2{font-size:94px;line-height:1.16}
+/* Full-bleed cover is opt-in: first slide with the image-emphasis layout. */
+.news-card.cover-card.cover-background .card-media,
+.capture-item .news-card.cover-card.cover-background .card-media{position:absolute;inset:0;width:100%;height:100%;border-radius:0;margin:0;z-index:0;opacity:.85}
+.news-card.cover-card.cover-background .card-media img{object-fit:cover}
+.news-card.cover-card.cover-background .card-media::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,#0c1735a0 0%,transparent 28%,#0c173575 58%,#0c1735ef 100%)}
+.news-card.cover-card.cover-background .card-top,.news-card.cover-card.cover-background .card-bottom,.news-card.cover-card.cover-background .card-content{position:relative;z-index:1;color:#fff}
+.news-card.cover-card.cover-background .card-content{justify-content:flex-end;flex:1}
+.news-card.cover-card.cover-background .card-kicker{color:#bcd0ff}
+.news-card.cover-card.cover-background .card-content h2{font-size:clamp(34px,4vw,58px);text-shadow:0 3px 20px #0c142b99}
+.capture-item .news-card.cover-card.cover-background .card-content h2{font-size:94px;line-height:1.16}
 .page-refresh{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;background:#fff;border:1px solid #dce3f0;border-radius:9px;color:#304b80;font-size:11px;font-weight:800;letter-spacing:0;white-space:nowrap}
 .page-refresh:hover{background:#eef2ff;border-color:#a9bbef}
-@media(max-width:760px){.header-right{gap:7px}.page-refresh{padding:9px}.page-refresh span{display:none}.version{font-size:9px}.news-card.cover-card.visual-card .card-content h2{font-size:clamp(31px,8vw,45px)}}
+@media(max-width:760px){.header-right{gap:7px}.page-refresh{padding:9px}.page-refresh span{display:none}.version{font-size:9px}.news-card.cover-card.cover-background .card-content h2{font-size:clamp(31px,8vw,45px)}}
 
 /* Review inbox and ChatGPT image recommendations. */
 .import-content{grid-template-columns:1fr}
