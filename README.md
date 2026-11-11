@@ -53,6 +53,16 @@ API는 비밀 Bearer 토큰으로 보호되며, 본문 데이터는 검증한 �
 
 ## 범위 및 보안
 
+### 관리자 로그인 설정
+
+1. Supabase Authentication → Users에서 관리자 이메일 계정을 추가하고 이메일을 인증 처리합니다. 비밀번호는 Supabase에서 관리합니다.
+2. Vercel Production 환경변수에 `NEXT_PUBLIC_SUPABASE_URL`(Supabase Project URL), `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`(Supabase publishable key), `TREND_STUDIO_ADMIN_EMAIL`(관리자 이메일)을 등록한 뒤 재배포합니다.
+3. Studio 상단 **관리자 스튜디오**에서 이메일/비밀번호로 로그인하면 저장된 초안 조회와 새 초안 저장 기능을 쓸 수 있습니다. 편집한 기존 게시글은 새 초안으로 저장되며, 기존 행 덮어쓰기/버전 관리는 후속 기능입니다.
+4. 서버에서는 Supabase가 확인한 로그인 사용자 이메일이 관리자 이메일과 일치하는지 확인합니다. 기존 `TREND_STUDIO_API_TOKEN`은 ChatGPT Action 연동용으로 별도 유지됩니다.
+
+- 브라우저에는 공개 가능한 Supabase URL/Publishable Key만 전달됩니다. `SUPABASE_SERVICE_ROLE_KEY`와 `TREND_STUDIO_API_TOKEN`은 서버 환경변수로만 유지하세요.
+- 관리자 이메일은 단일 계정 기준입니다. 계정을 추가하려면 서버 권한 검증 구조를 확장해야 합니다.
+
 - PNG 렌더링은 브라우저에서 이루어집니다.
 - JSON 파일/텍스트 가져오기는 서버 설정 없이 동작하지만, 새로고침 시 편집 내용이 초기화됩니다.
 - 외부 등록과 목록 조회는 Supabase 및 토큰 설정 이후에만 활성화됩니다.
