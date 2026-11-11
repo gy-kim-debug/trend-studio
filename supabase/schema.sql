@@ -11,7 +11,13 @@ create table if not exists public.card_drafts (
 );
 
 create index if not exists card_drafts_created_at_idx on public.card_drafts(created_at desc);
+alter table public.card_drafts add column if not exists caption text not null default '';
+alter table public.card_drafts add column if not exists hashtags text not null default '';
 alter table public.card_drafts enable row level security;
+-- Private original images for editable visual cards. The server issues short-lived signed URLs.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('trend-card-images', 'trend-card-images', false, 8388608, array['image/png','image/jpeg','image/webp'])
+on conflict (id) do nothing;
 -- No client policies: access is exclusively via authenticated server API.
 
 -- Trend discovery records, including a reviewable five-slide draft.
