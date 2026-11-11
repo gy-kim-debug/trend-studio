@@ -319,10 +319,51 @@ export default function Studio() {
         `${i + 1}번 카드의 렌더링 시간이 초과되었습니다.`,
       );
       if (!blob) throw new Error(`${i + 1}번 카드의 이미지 생성에 실패했습니다.`);
+      // iOS Safari may omit an <img> inside html-to-image's SVG foreignObject
+      // even when the image is fully loaded. Paint the original media directly
+      // on the exported PNG with Canvas so the photo cannot silently disappear.
+      if (needsImage && image && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
+        return await withTimeout(compositeSafariImage(blob, image, element, i === 0), `${i + 1}번 카드 Safari 이미지 합성 시간이 초과되었습니다.`);
+      }
       return blob;
     } finally {
       if (image && needsImage) image.src = originalSrc;
     }
+  }
+
+  async function compositeSafariImage(baseBlob: Blob, source: HTMLImageElement, captureRoot: HTMLElement, cover: boolean): Promise<Blob> {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1080; canvas.height = 1350;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Safari 이미지 합성 기능을 사용할 수 없습니다.');
+    const baseUrl = URL.createObjectURL(baseBlob);
+    try {
+      const rendered = new Image();
+      rendered.src = baseUrl;
+      await rendered.decode();
+      ctx.drawImage(rendered, 0, 0, 1080, 1350);
+      const cardRect = captureRoot.querySelector('.news-card')?.getBoundingClientRect();
+      const mediaRect = source.getBoundingClientRect();
+      if (!cardRect || !mediaRect.width || !mediaRect.height) throw new Error('이미지 배치 영역을 찾지 못했습니다.');
+      let x = mediaRect.left - cardRect.left;
+      let y = mediaRect.top - cardRect.top;
+      let width = mediaRect.width;
+      let height = mediaRect.height;
+      // Cover card has a full-bleed image behind text. Keep its top label and
+      // lower title readable by placing the photo in the central illustration zone.
+      if (cover) { x = 75; y = 175; width = 930; height = 560; }
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, width, height);
+      ctx.clip();
+      const scale = Math.min(width / source.naturalWidth, height / source.naturalHeight);
+      const drawW = source.naturalWidth * scale;
+      const drawH = source.naturalHeight * scale;
+      ctx.drawImage(source, x + (width - drawW) / 2, y + (height - drawH) / 2, drawW, drawH);
+      ctx.restore();
+      const result = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Safari 합성 PNG 생성에 실패했습니다.')), 'image/png'));
+      return result;
+    } finally { URL.revokeObjectURL(baseUrl); }
   }
 
   function download(dataUrl: string, filename: string) {
