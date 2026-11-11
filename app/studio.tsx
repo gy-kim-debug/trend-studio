@@ -4,12 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getFontEmbedCSS, toBlob } from 'html-to-image';
 import JSZip from 'jszip';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, FileJson, Images, Layers3, LockKeyhole, LogOut, RotateCcw, Share2, Sparkles } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, FileJson, Images, Layers3, LockKeyhole, LogOut, RotateCcw, Share2, Sparkles, TrendingUp, ExternalLink } from 'lucide-react';
 import { CardDraft, parseCardDraft, Slide } from '@/lib/content';
 
 type Theme = 'midnight' | 'paper' | 'citrus';
 type ShareKind = 'one' | 'all';
 type PreparedShare = { kind: ShareKind; signature: string; files: File[] };
+type TrendRow = { id: string; title: string; category: string; summary: string; why_now: string; buzz_score: number; value_score: number; source_urls: string[]; draft: CardDraft; created_at: string };
 
 const initialSlides: Slide[] = [
   { kicker: 'AI BREAKTHROUGH', title: 'AI가 보안 코드의 안전성을 증명했다고?', body: '우리가 사용하는 암호화 기술을 검증하는 새로운 방법이 등장했습니다.' },
@@ -67,6 +68,8 @@ export default function Studio() {
   const [authChecking, setAuthChecking] = useState(true);
   const [remoteDrafts, setRemoteDrafts] = useState<{ id: string; title: string; category: string; brand: string; source_urls: string[]; slides: Slide[] }[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
+  const [trendRows, setTrendRows] = useState<TrendRow[]>([]);
+  const [loadingTrends, setLoadingTrends] = useState(false);
   const [sourceUrls, setSourceUrls] = useState<string[]>([]);
   const [storyTitle, setStoryTitle] = useState('AI가 보안 코드의 안전성을 증명했다고?');
   const captureRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -168,6 +171,32 @@ export default function Studio() {
       await fetchDrafts();
     } catch (error) { setNotice(`저장 실패: ${error instanceof Error ? error.message : '네트워크 오류'}`); }
     finally { setLoadingDrafts(false); }
+  }
+
+  async function fetchTrends() {
+    setLoadingTrends(true);
+    try {
+      const response = await fetch('/api/trends', { headers: await authHeader(), cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? '트렌드 목록 오류');
+      setTrendRows(result.trends ?? []);
+      setNotice(`${result.trends?.length ?? 0}개 트렌드 후보를 불러왔습니다.`);
+    } catch (error) { setNotice(`트렌드 조회 실패: ${error instanceof Error ? error.message : '연결 오류'}`); }
+    finally { setLoadingTrends(false); }
+  }
+
+  async function collectTrends() {
+    if (!window.confirm('오늘의 트렌드를 AI 웹 검색으로 수집할까요? OpenAI API 사용 요금이 발생할 수 있습니다.')) return;
+    setLoadingTrends(true);
+    setNotice('최신 트렌드를 검색하고 5장 카드 원고를 생성하는 중입니다. 최대 2분 걸릴 수 있습니다.');
+    try {
+      const response = await fetch('/api/trends', { method: 'POST', headers: await authHeader() });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? '수집 실패');
+      await fetchTrends();
+      setNotice(`오늘의 새 트렌드 ${result.collected}개를 수집했습니다. 출처를 확인한 후 카드에 적용하세요.`);
+    } catch (error) { setNotice(`수집 실패: ${error instanceof Error ? error.message : '연결 오류'}`); }
+    finally { setLoadingTrends(false); }
   }
 
   async function withTimeout<T>(task: Promise<T>, message: string): Promise<T> {
@@ -310,6 +339,16 @@ export default function Studio() {
             <label>게시글 제목<input maxLength={160} value={storyTitle} onChange={event => setStoryTitle(event.target.value)}/></label>
             <div className="admin-buttons"><button onClick={saveDraft} disabled={loadingDrafts}>현재 5장 초안 저장</button><button onClick={fetchDrafts} disabled={loadingDrafts}>{loadingDrafts ? '처리 중...' : '저장된 초안 조회'}</button></div>
             <div className="draft-list">{remoteDrafts.map(draft => <button key={draft.id} onClick={() => { try { applyDraft(parseCardDraft({ title: draft.title, category: draft.category, brand: draft.brand, sourceUrls: draft.source_urls, slides: draft.slides })); } catch { setNotice('서버 초안 형식이 올바르지 않습니다.'); } }}>{draft.title}<small>{draft.category}</small></button>)}</div>
+            <div className="trend-panel">
+              <div className="trend-heading"><TrendingUp size={18}/><div><strong>오늘의 트렌드 레이더</strong><small>하루 1회 · 화제성 50% + 정보 가치 50% · 출처 검토 후 발행</small></div></div>
+              <div className="admin-buttons"><button disabled={loadingTrends} onClick={fetchTrends}>수집된 트렌드 보기</button><button disabled={loadingTrends} onClick={collectTrends}>{loadingTrends ? '트렌드 처리 중...' : '오늘 트렌드 수동 수집'}</button></div>
+              <div className="trend-list">{trendRows.map(trend => <article className="trend-item" key={trend.id}>
+                <div className="trend-item-head"><span>{trend.category}</span><strong>화제성 {trend.buzz_score} · 정보 {trend.value_score}</strong></div>
+                <h3>{trend.title}</h3><p>{trend.summary}</p><small>왜 지금? {trend.why_now}</small>
+                <div className="trend-sources">{trend.source_urls.map((url, i) => <a key={url} href={url} target="_blank" rel="noopener noreferrer">출처 {i + 1} <ExternalLink size={12}/></a>)}</div>
+                <button className="trend-apply" onClick={() => { try { applyDraft(parseCardDraft(trend.draft)); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { setNotice('후보 원고 형식이 올바르지 않습니다.'); } }}>5장 카드 편집기로 가져오기</button>
+              </article>)}</div>
+            </div>
           </div>
         )}
       </div>
