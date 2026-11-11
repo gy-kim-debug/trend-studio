@@ -50,11 +50,36 @@ export async function PATCH(req: NextRequest) {
   if (!await authorized(req)) return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
   const db = database();
   if (!db) return NextResponse.json({ error: 'Supabase 연결 설정이 필요합니다.' }, { status: 503 });
-  let input: { id?: unknown; publishStatus?: unknown };
+
+  let input: { id?: unknown; publishStatus?: unknown; draft?: unknown };
   try { input = await req.json(); } catch { return NextResponse.json({ error: '유효한 JSON이 필요합니다.' }, { status: 400 }); }
   const id = input.id;
+  if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(id)) {
+    return NextResponse.json({ error: '게시글 ID 형식이 올바르지 않습니다.' }, { status: 400 });
+  }
+
+  // Content edits and publication-status transitions are separate operations.
+  if (input.draft !== undefined) {
+    if (input.publishStatus !== undefined) return NextResponse.json({ error: '원고와 게시 상태는 각각 저장해주세요.' }, { status: 400 });
+    let draft;
+    try { draft = parseCardDraft(input.draft); }
+    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : '원고 형식 오류' }, { status: 400 }); }
+    const { data, error } = await db.from('card_drafts').update({
+      title: draft.title,
+      category: draft.category,
+      brand: draft.brand,
+      source_urls: draft.sourceUrls,
+      slides: draft.slides.map(({ imageUrl: _url, ...slide }) => slide),
+      caption: draft.caption ?? '',
+      hashtags: draft.hashtags ?? '',
+    }).eq('id', id).select('id,publish_status').maybeSingle();
+    if (error) return NextResponse.json({ error: '변경사항을 저장하지 못했습니다.' }, { status: 500 });
+    if (!data) return NextResponse.json({ error: '수정할 게시글을 찾을 수 없습니다.' }, { status: 404 });
+    return NextResponse.json({ id: data.id, publishStatus: data.publish_status });
+  }
+
   const next = input.publishStatus;
-  if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(id) || !statuses.some(status => status === next)) return NextResponse.json({ error: '게시글 ID 또는 상태가 올바르지 않습니다.' }, { status: 400 });
+  if (!statuses.some(status => status === next)) return NextResponse.json({ error: '게시 상태가 올바르지 않습니다.' }, { status: 400 });
   const { data: existing, error: readError } = await db.from('card_drafts').select('publish_status').eq('id', id).maybeSingle();
   if (readError || !existing) return NextResponse.json({ error: '게시글을 찾을 수 없습니다.' }, { status: 404 });
   if (next === 'published' && existing.publish_status !== 'ready') return NextResponse.json({ error: '먼저 게시 준비 완료로 표시해주세요.' }, { status: 409 });
