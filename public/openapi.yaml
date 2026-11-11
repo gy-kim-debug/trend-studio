@@ -1,0 +1,85 @@
+openapi: 3.1.0
+info:
+  title: Trend Studio Draft API
+  version: 0.3.0
+  description: Register verified Instagram carousel drafts for human review. Never publish automatically.
+servers:
+  - url: https://trend-studio-eight.vercel.app
+paths:
+  /api/drafts:
+    post:
+      operationId: createCardDraft
+      summary: Save a verified five-slide Instagram draft
+      description: Use only after the user requests draft registration. Include source URLs for factual review.
+      security:
+        - ApiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardDraft'
+      responses:
+        '201':
+          description: Draft created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                  createdAt:
+                    type: string
+        '400':
+          description: Invalid content
+        '401':
+          description: Authentication required
+        '503':
+          description: Storage not configured
+components:
+  securitySchemes:
+    ApiToken:
+      type: http
+      scheme: bearer
+  schemas:
+    Slide:
+      type: object
+      required: [kicker, title, body]
+      properties:
+        kicker:
+          type: string
+          maxLength: 35
+        title:
+          type: string
+          maxLength: 110
+        body:
+          type: string
+          maxLength: 350
+    CardDraft:
+      type: object
+      required: [title, category, slides, sourceUrls]
+      properties:
+        title:
+          type: string
+          maxLength: 150
+        category:
+          type: string
+          maxLength: 25
+        brand:
+          type: string
+          maxLength: 24
+        sourceUrls:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            format: uri
+        slides:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/Slide'

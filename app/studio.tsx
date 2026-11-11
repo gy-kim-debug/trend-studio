@@ -3,9 +3,9 @@
 import { useRef, useState } from 'react';
 import { getFontEmbedCSS, toBlob } from 'html-to-image';
 import JSZip from 'jszip';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, Layers3, RotateCcw, Sparkles } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, FileJson, Layers3, RotateCcw, Sparkles } from 'lucide-react';
+import { CardDraft, parseCardDraft, Slide } from '@/lib/content';
 
-type Slide = { kicker: string; title: string; body: string };
 type Theme = 'midnight' | 'paper' | 'citrus';
 
 const initialSlides: Slide[] = [
@@ -46,10 +46,48 @@ export default function Studio() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
   const [notice, setNotice] = useState('');
+  const [jsonText, setJsonText] = useState('');
+  const [showImport, setShowImport] = useState(false);
+  const [apiToken, setApiToken] = useState('');
+  const [remoteDrafts, setRemoteDrafts] = useState<{ id: string; title: string; category: string; brand: string; source_urls: string[]; slides: Slide[] }[]>([]);
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
+  const [sourceUrls, setSourceUrls] = useState<string[]>([]);
+  const [storyTitle, setStoryTitle] = useState('AI가 보안 코드의 안전성을 증명했다고?');
   const captureRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const updateSlide = (key: keyof Slide, value: string) => setSlides(current => current.map((slide, i) => i === selected ? { ...slide, [key]: value } : slide));
   const fileName = (i: number) => `trend-studio-${String(i + 1).padStart(2, '0')}.png`;
+
+  function applyDraft(draft: CardDraft) {
+    setSlides(draft.slides); setCategory(draft.category); setBrand(draft.brand);
+    setSourceUrls(draft.sourceUrls); setStoryTitle(draft.title); setSelected(0);
+    setNotice('콘텐츠를 불러왔습니다. 게시 전 사실 관계를 검토해주세요.');
+  }
+
+  function importJson() {
+    try { applyDraft(parseCardDraft(JSON.parse(jsonText))); setShowImport(false); }
+    catch (error) { setNotice(`가져오기 실패: ${error instanceof Error ? error.message : '잘못된 JSON'}`); }
+  }
+
+  function exportJson() {
+    const data: CardDraft = { title: storyTitle, category, brand, sourceUrls, slides };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    download(url, 'trend-studio-draft.json');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  async function fetchDrafts() {
+    if (!apiToken.trim()) { setNotice('서버 연결 토큰을 입력해주세요.'); return; }
+    setLoadingDrafts(true);
+    try {
+      const response = await fetch('/api/drafts', { headers: { Authorization: `Bearer ${apiToken}` }, cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? '초안을 불러오지 못했습니다.');
+      setRemoteDrafts(result.drafts ?? []);
+      setNotice(`${result.drafts?.length ?? 0}개 초안을 조회했습니다.`);
+    } catch (error) { setNotice(`서버 연결 실패: ${error instanceof Error ? error.message : '네트워크 오류'}`); }
+    finally { setLoadingDrafts(false); }
+  }
 
   async function withTimeout<T>(task: Promise<T>, message: string): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -129,6 +167,10 @@ export default function Studio() {
   return <main className="app-shell">
     <header className="header"><div className="logo"><div className="logo-icon"><Layers3 size={22} /></div><div><strong>trend<span>studio.</span></strong><small>CONTENT DESIGN WORKSPACE</small></div></div><div className="header-right"><span className="version">BETA / 0.1</span><span className="saved"><span /> Local preview</span></div></header>
     <section className="top-heading"><div><div className="eyebrow"><Sparkles size={14}/> YOUR CREATIVE WORKSPACE</div><h1>카드뉴스 스튜디오<span>.</span></h1><p>하나의 스토리를 다섯 장의 콘텐츠로. 원고를 다듬고, 스타일을 고르고, 바로 내보내세요.</p></div><button className="primary-button top-download" onClick={downloadAll} disabled={busy}><ArrowDownToLine size={17}/>{busy ? progress : '5장 전체 다운로드'}</button></section>
+    <section className="import-panel panel">
+      <div className="import-panel-title"><div><span className="step-label">CONTENT PIPELINE</span><h2>ChatGPT 원고 가져오기</h2><p>JSON 붙여넣기로 바로 제작하거나, 서버에 등록된 초안을 선택하세요.</p></div><button className="import-toggle" onClick={() => setShowImport(open => !open)}><FileJson size={16}/>{showImport ? '가져오기 닫기' : 'JSON 가져오기'}</button></div>
+      {showImport && <div className="import-content"><div><label htmlFor="json-input">ChatGPT 원고 JSON</label><textarea id="json-input" value={jsonText} onChange={event => setJsonText(event.target.value)} placeholder='{"title":"뉴스 제목","category":"TECH / AI","slides":[...]}' rows={7}/><div className="import-buttons"><button onClick={importJson}>5장 카드에 적용</button><button onClick={exportJson}>현재 원고 JSON 내보내기</button></div></div><div><label htmlFor="api-token">서버 연결 토큰 (세션 동안만 유지)</label><input id="api-token" type="password" autoComplete="off" value={apiToken} onChange={event => setApiToken(event.target.value)} placeholder="TREND_STUDIO_API_TOKEN"/><button className="load-drafts" onClick={fetchDrafts} disabled={loadingDrafts}>{loadingDrafts ? '조회 중...' : '서버에 저장된 초안 조회'}</button><div className="draft-list">{remoteDrafts.map(draft => <button key={draft.id} onClick={() => { try { applyDraft(parseCardDraft({ title: draft.title, category: draft.category, brand: draft.brand, sourceUrls: draft.source_urls, slides: draft.slides })); setShowImport(false); } catch { setNotice('서버 초안 형식이 올바르지 않습니다.'); } }}>{draft.title}<small>{draft.category}</small></button>)}</div></div></div>}
+    </section>
     <section className="workspace">
       <aside className="panel editor-panel"><div className="panel-heading"><span className="step-label">01 / CONTENT EDITOR</span><h2>콘텐츠 편집</h2><p>카드를 선택하고 내용을 수정해보세요.</p></div>
         <div className="field-row"><label>카테고리<input maxLength={25} value={category} onChange={e => setCategory(e.target.value)}/></label><label>브랜드명<input maxLength={24} value={brand} onChange={e => setBrand(e.target.value)}/></label></div>
