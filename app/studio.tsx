@@ -10,7 +10,7 @@ import { CardDraft, parseCardDraft, parseImportBundle, Slide } from '@/lib/conte
 type Theme = 'midnight' | 'paper' | 'citrus';
 type ShareKind = 'one' | 'all';
 type PreparedShare = { kind: ShareKind; signature: string; files: File[] };
-type TrendRow = { id: string; title: string; category: string; summary: string; why_now: string; buzz_score: number; value_score: number; source_urls: string[]; draft: CardDraft; created_at: string };
+type TrendRow = { id: string; title: string; category: string; summary: string; why_now: string; buzz_score: number; value_score: number; source_urls: string[]; draft: CardDraft; created_at: string; production_status?: 'unmade' | 'in_progress' | 'completed' | 'failed'; linked_draft_id?: string | null };
 type StudioView = 'trends' | 'drafts' | 'editor';
 
 const koreanDate = (date: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(date));
@@ -76,9 +76,10 @@ export default function Studio() {
   const [signedInEmail, setSignedInEmail] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
-  const [remoteDrafts, setRemoteDrafts] = useState<{ id: string; title: string; category: string; brand: string; source_urls: string[]; slides: Slide[]; caption: string; hashtags: string }[]>([]);
+  const [remoteDrafts, setRemoteDrafts] = useState<{ id: string; title: string; category: string; brand: string; source_urls: string[]; slides: Slide[]; caption: string; hashtags: string; trend_id?: string | null }[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [trendRows, setTrendRows] = useState<TrendRow[]>([]);
+  const [sourceTrendId, setSourceTrendId] = useState<string | null>(null);
   const [loadingTrends, setLoadingTrends] = useState(false);
   const [sourceUrls, setSourceUrls] = useState<string[]>([]);
   const [storyTitle, setStoryTitle] = useState('AI가 보안 코드의 안전성을 증명했다고?');
@@ -164,7 +165,8 @@ export default function Studio() {
   }
   const fileName = (i: number) => `trend-studio-${String(i + 1).padStart(2, '0')}.png`;
 
-  function applyDraft(draft: CardDraft) {
+  function applyDraft(draft: CardDraft, trendId: string | null = null) {
+    setSourceTrendId(trendId);
     setSlides(draft.slides); setCategory(draft.category); setBrand(draft.brand);
     setSourceUrls(draft.sourceUrls); setStoryTitle(draft.title); setCaption(draft.caption ?? ''); setHashtags(draft.hashtags ?? ''); setSelected(0);
     setView('editor');
@@ -225,11 +227,12 @@ export default function Studio() {
       const payload: CardDraft = { title: storyTitle.trim() || slides[0].title, category, brand, sourceUrls, slides, caption, hashtags };
       const response = await fetch('/api/drafts', {
         method: 'POST', headers: { ...await authHeader(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, trendId: sourceTrendId }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? '초안을 저장하지 못했습니다.');
       setNotice('초안을 저장했습니다. 기존 게시글을 수정한 경우 새 초안으로 저장됩니다.');
+      if (sourceTrendId) { setTrendsLoaded(false); await fetchTrends(); }
       await fetchDrafts();
     } catch (error) { setNotice(`저장 실패: ${error instanceof Error ? error.message : '네트워크 오류'}`); }
     finally { setLoadingDrafts(false); }
@@ -411,16 +414,16 @@ export default function Studio() {
         {trendsLoaded && visibleTrends.length === 0 && <div className="collection-empty">{dateFilter === 'all' ? '아직 저장된 트렌드가 없습니다.' : '선택한 날짜에 수집된 트렌드가 없습니다.'}</div>}
         <div className="trend-grid">{visibleTrends.map(trend => <article className="trend-item" key={trend.id}>
           <div className="trend-item-head"><span className="trend-category">{trend.category}</span><span>{koreanDate(trend.created_at)}</span></div>
-          <h3>{trend.title}</h3><p>{trend.summary}</p>
+          <div className="trend-status-line"><h3>{trend.title}</h3><span className={`production-status production-${trend.production_status || 'unmade'}`}>{({ unmade: '⚪ 미제작', in_progress: '🟡 제작 중', completed: '🟢 제작 완료', failed: '🔴 제작 실패' } as Record<string,string>)[trend.production_status || 'unmade']}</span></div><p>{trend.summary}</p>
           <div className="trend-metrics"><span>화제성 <strong>{trend.buzz_score}</strong></span><span>정보 가치 <strong>{trend.value_score}</strong></span></div>
           <div className="trend-why"><strong>왜 지금?</strong><p>{trend.why_now}</p></div>
           <div className="trend-sources">{trend.source_urls.map((url, i) => <a key={url} href={url} target="_blank" rel="noopener noreferrer">출처 {i + 1} <ExternalLink size={12}/></a>)}</div>
-          <button className="trend-apply" onClick={() => { try { applyDraft(parseCardDraft(trend.draft)); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { setNotice('후보 원고 형식이 올바르지 않습니다.'); } }}>카드 편집하기 <ArrowRight size={15}/></button>
+          <button className="trend-apply" disabled={trend.production_status === 'in_progress'} onClick={() => { if (trend.production_status === 'completed' && trend.linked_draft_id) { setView('drafts'); if (!draftsLoaded) void fetchDrafts(); return; } try { applyDraft(parseCardDraft(trend.draft), trend.id); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { setNotice('후보 원고 형식이 올바르지 않습니다.'); } }}>{trend.production_status === 'completed' && trend.linked_draft_id ? '제작된 게시글 보기' : trend.production_status === 'in_progress' ? '제작 중' : '카드뉴스 제작하기'} <ArrowRight size={15}/></button>
         </article>)}</div>
       </> : <div className="collection-empty">관리자 로그인 후 수집된 트렌드를 확인할 수 있습니다.</div>}
     </section>}
     {view === 'drafts' && <section className="collection-page"><div className="collection-header"><div><span className="step-label">MY CONTENT LIBRARY</span><h1>내 게시글<span>.</span></h1><p>저장한 카드뉴스를 다시 불러와 수정하고 새 버전으로 저장하세요.</p></div><button className="collection-refresh" disabled={loadingDrafts || !signedInEmail} onClick={fetchDrafts}><RefreshCw size={16}/>{loadingDrafts ? '조회 중...' : '새로고침'}</button></div>
-      {signedInEmail ? <><div className="collection-controls"><div><strong>검토할 게시글 {remoteDrafts.length}개</strong><small>최근 저장된 초안 30개 · 원고/이미지 상태를 확인하세요.</small></div><button className="collection-refresh" onClick={() => { setView('editor'); setShowImport(true); }}><FileJson size={15}/> ChatGPT 원고 가져오기</button></div><div className="trend-grid">{remoteDrafts.map(draft => { const pending = draft.slides.filter(s => s.imageMode && s.imageMode !== 'none' && !s.imagePath).length; return <article className="trend-item" key={draft.id}><div className="trend-item-head"><span className="trend-category">{draft.category}</span><span>{draft.slides.length} SLIDES</span></div><h3>{draft.title}</h3><div className="draft-readiness"><span className="readiness-ok">원고 {draft.slides.length}장</span><span className={draft.caption ? 'readiness-ok' : 'readiness-warn'}>캡션 {draft.caption ? '완료' : '미작성'}</span><span className={pending ? 'readiness-warn' : 'readiness-ok'}>{pending ? `이미지 ${pending}장 준비 필요` : '이미지 검토 가능'}</span></div><p>검토 후 수정하고 PNG와 게시글 내용을 저장하세요.</p><button className="trend-apply" onClick={() => { try { applyDraft({ ...parseCardDraft({ title: draft.title, category: draft.category, brand: draft.brand, sourceUrls: draft.source_urls, slides: draft.slides, caption: draft.caption, hashtags: draft.hashtags }), slides: draft.slides }); } catch { setNotice('서버 초안 형식이 올바르지 않습니다.'); } }}>검토하기 <ArrowRight size={15}/></button></article>; })}</div>{draftsLoaded && remoteDrafts.length === 0 && <div className="collection-empty">저장된 게시글이 없습니다. ChatGPT 원고를 가져와 검토함에 저장해보세요.</div>}</> : <div className="collection-empty">관리자 로그인 후 저장된 게시글을 확인할 수 있습니다.</div>}
+      {signedInEmail ? <><div className="collection-controls"><div><strong>검토할 게시글 {remoteDrafts.length}개</strong><small>최근 저장된 초안 30개 · 원고/이미지 상태를 확인하세요.</small></div><button className="collection-refresh" onClick={() => { setView('editor'); setShowImport(true); }}><FileJson size={15}/> ChatGPT 원고 가져오기</button></div><div className="trend-grid">{remoteDrafts.map(draft => { const pending = draft.slides.filter(s => s.imageMode && s.imageMode !== 'none' && !s.imagePath).length; return <article className="trend-item" key={draft.id}><div className="trend-item-head"><span className="trend-category">{draft.category}</span><span>{draft.slides.length} SLIDES</span></div><h3>{draft.title}</h3><div className="draft-readiness"><span className="readiness-ok">원고 {draft.slides.length}장</span><span className={draft.caption ? 'readiness-ok' : 'readiness-warn'}>캡션 {draft.caption ? '완료' : '미작성'}</span><span className={pending ? 'readiness-warn' : 'readiness-ok'}>{pending ? `이미지 ${pending}장 준비 필요` : '이미지 검토 가능'}</span></div><p>검토 후 수정하고 PNG와 게시글 내용을 저장하세요.</p><button className="trend-apply" onClick={() => { try { applyDraft({ ...parseCardDraft({ title: draft.title, category: draft.category, brand: draft.brand, sourceUrls: draft.source_urls, slides: draft.slides, caption: draft.caption, hashtags: draft.hashtags }), slides: draft.slides }, null); } catch { setNotice('서버 초안 형식이 올바르지 않습니다.'); } }}>검토하기 <ArrowRight size={15}/></button></article>; })}</div>{draftsLoaded && remoteDrafts.length === 0 && <div className="collection-empty">저장된 게시글이 없습니다. ChatGPT 원고를 가져와 검토함에 저장해보세요.</div>}</> : <div className="collection-empty">관리자 로그인 후 저장된 게시글을 확인할 수 있습니다.</div>}
     </section>}
     {view === 'editor' && <section className="workspace">
       <aside className="panel editor-panel"><div className="panel-heading"><span className="step-label">01 / CONTENT EDITOR</span><h2>콘텐츠 편집</h2><p>카드를 선택하고 내용을 수정해보세요.</p></div>
