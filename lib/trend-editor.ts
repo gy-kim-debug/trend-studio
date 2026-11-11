@@ -1,14 +1,8 @@
 import { CardDraft, parseCardDraft } from '@/lib/content';
 
 export type TrendCandidate = {
-  title: string;
-  category: string;
-  summary: string;
-  whyNow: string;
-  buzzScore: number;
-  valueScore: number;
-  sourceUrls: string[];
-  draft: CardDraft;
+  title: string; category: string; summary: string; whyNow: string;
+  buzzScore: number; valueScore: number; sourceUrls: string[]; draft: CardDraft;
 };
 
 export function parseTrendCandidates(input: unknown, citedUrls: Set<string>): TrendCandidate[] {
@@ -35,9 +29,18 @@ export function parseTrendCandidates(input: unknown, citedUrls: Set<string>): Tr
 }
 
 export function editorPrompt(today: string, recentTitles: string[]): string {
-  return `당신은 한국어 인스타그램 트렌드 카드뉴스 편집장입니다. 오늘 기준일은 ${today} (한국시간)입니다. 반드시 웹 검색으로 최근 48시간의 정보를 확인하세요. 평범한 사건 속보보다 사람들의 대화·소비·취향을 바꾸는 최신 트렌드에 집중하세요.
-우선순위: AI·테크, 인터넷·SNS 문화, 라이프스타일, 브랜드·제품, 엔터테인먼트, 한국 이용자에게 의미 있는 글로벌 트렌드. 국내 관심사 2건과 해외발 관심사 1건을 균형 있게 고려하세요. 이미 다룬 주제는 제외: ${JSON.stringify(recentTitles)}.
-화제성 50%, 실용/지식 가치 50%로 0~100점씩 평가합니다. 자극적 소문, 단순 광고, 미확인 숫자, 확인되지 않은 SNS 바이럴, 근거 없는 전망은 배제합니다. 선정한 각 항목은 서로 다른 신뢰 가능한 출처를 가능한 한 2개 이상 확인합니다.
-단 3개 이하의 독립된 트렌드를 선정하세요. 사실과 해석을 구분하고 과장은 피하세요. 결과에는 검색 결과에서 실제로 확인한 https 원문 링크만 sourceUrls에 넣고, 링크는 응답의 인용 출처에도 표시하세요. 카드 내용은 원문을 베끼지 말고 직접 쓴 한국어로, 5장 순서(후킹/사실/배경/영향/한줄 정리)로 구성하세요. 카드 각 장의 kicker 35자 이하, title 110자 이하, body 350자 이하, 전체 제목 150자 이하입니다.
-JSON 객체만 출력하세요. 형식: {"trends":[{"title":"...","category":"LIFESTYLE","summary":"검증된 핵심 사실","whyNow":"지금 주목할 이유","buzzScore":85,"valueScore":80,"sourceUrls":["https://..."],"draft":{"slides":[{"kicker":"HOOK","title":"...","body":"..."},{"kicker":"FACT","title":"...","body":"..."},{"kicker":"CONTEXT","title":"...","body":"..."},{"kicker":"IMPACT","title":"...","body":"..."},{"kicker":"TAKEAWAY","title":"...","body":"..."}]}}]}`;
+  return `당신은 한국어 인스타그램 트렌드 카드뉴스 편집장입니다. 오늘 기준일은 ${today} 한국시간입니다. 반드시 웹 검색으로 최근 48시간 자료를 확인하세요. 평범한 속보보다 한국인의 대화·소비·취향을 바꿀 최신 트렌드에 집중하세요. 이미 다룬 주제는 제외: ${JSON.stringify(recentTitles)}.
+AI·테크, SNS 문화, 캐릭터, 라이프스타일, 브랜드·제품, 엔터테인먼트를 고르게 검토하세요. 평가 기준은 정보 가치 55%, 화제성 30%, 시각적 전달력 15%. 확인되지 않은 사실과 수치, 단순 광고, 루머는 제외하세요.
+서로 다른 트렌드 정확히 3개(믿을 만한 주제가 부족하면 1~2개)를 선정하세요. 각 주제별로 검증된 출처만 sourceUrls로 제시하고 반드시 웹 인용에 실린 https 원문 URL을 쓰세요. 날짜·사실·추론을 구분하세요.
+각 주제의 draft는 정확히 5장의 카드뉴스, Instagram caption, 중복 없는 해시태그 3~5개를 반드시 포함해야 합니다. 5개 초과 금지. kicker 35자 이내, title 110자 이내, body 350자 이내. 첫 카드 후킹, 나머지 사실/배경/영향/결론.
+중요: 이것은 실제 이미지 자동 제작을 위한 데이터입니다. 단순히 이미지를 추천하지 말고 각 슬라이드에 imageMode, imagePrompt, imageSourceUrl, imageNote, layout을 직접 적으세요.
+- 진짜 제품·행사·인물·캐릭터의 모습을 설명하려면 imageMode='official_image'. imagePrompt에는 Wikimedia Commons에서 실물 사진을 검색할 때 쓰는 명확한 영어 검색어(주제 고유명사 우선)를 넣고, imageSourceUrl에는 해당 실물 정보의 공식 발표/제품 페이지 URL을 제시하세요. 출처 링크가 재게시 허가를 뜻하지 않음을 imageNote에 명시하세요. 사용 허가 불명인 이미지는 자동 저장 대상이 아니고 검토용으로 남습니다. AI로 가짜 제품 사진을 만드는 식으로 대체하지 마세요.
+- 개념을 시각화하는 게 적절할 때만 imageMode='ai_concept'. imagePrompt는 거짓 브랜드 로고·실제 앱 화면·실제 사람 재현을 피하는 구체적인 비주얼 생성 지시문, imageNote는 AI 콘셉트 이미지 표기. 실제 이미지가 필요한 콘텐츠를 AI 이미지로 위장하지 마세요.
+- 이미지가 정보 전달에 불필요하면 imageMode='none', layout='text'.
+- layout은 text/image/split/background 중 하나. background는 첫 카드에서만 가능. 최소한 표지 한 장은 image 또는 split 또는 background 이미지 배치를 적극 고려하되 허위 시각자료는 만들지 마세요.
+- sourceUrls는 뉴스 사실 검증 URL, imageSourceUrl은 실제 물체의 출처. 업로드하지 않은 이미지에는 imagePath/imageUrl을 만들어 넣지 마세요.
+- caption은 사용자가 그대로 게시할 완결된 문장과 출처, 참여 유도 질문을 포함해야 합니다.
+JSON만 출력하세요. 정확한 형식:
+{"trends":[{"title":"트렌드","category":"LIFESTYLE","summary":"확인된 사실","whyNow":"지금 중요한 이유","buzzScore":85,"valueScore":80,"sourceUrls":["https://..."],"draft":{"caption":"후킹, 팩트, 질문, 출처","hashtags":"#태그1 #태그2 #태그3","slides":[{"kicker":"HOOK","title":"...","body":"...","layout":"background","imageMode":"official_image","imagePrompt":"exact product English search terms","imageSourceUrl":"https://...","imageNote":"사용권한 확인 필요"},{"kicker":"FACT","title":"...","body":"...","layout":"text","imageMode":"none"}]}}]}
+각 draft의 slides는 위 예시처럼 필드를 갖춘 정확히 5개입니다. 데이터 외에 해설·마크다운 코드블록을 출력하지 마세요.`;
 }
