@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getFontEmbedCSS, toBlob } from 'html-to-image';
 import JSZip from 'jszip';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, FileJson, Layers3, LockKeyhole, LogOut, RotateCcw, Sparkles } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, FileJson, Images, Layers3, LockKeyhole, LogOut, RotateCcw, Share2, Sparkles } from 'lucide-react';
 import { CardDraft, parseCardDraft, Slide } from '@/lib/content';
 
 type Theme = 'midnight' | 'paper' | 'citrus';
+type ShareKind = 'one' | 'all';
+type PreparedShare = { kind: ShareKind; signature: string; files: File[] };
 
 const initialSlides: Slide[] = [
   { kicker: 'AI BREAKTHROUGH', title: 'AI가 보안 코드의 안전성을 증명했다고?', body: '우리가 사용하는 암호화 기술을 검증하는 새로운 방법이 등장했습니다.' },
@@ -51,6 +53,7 @@ export default function Studio() {
   const [category, setCategory] = useState('TECH / AI');
   const [brand, setBrand] = useState('TREND BRIEF');
   const [busy, setBusy] = useState(false);
+  const [preparedShare, setPreparedShare] = useState<PreparedShare | null>(null);
   const [progress, setProgress] = useState('');
   const [notice, setNotice] = useState('');
   const [jsonText, setJsonText] = useState('');
@@ -67,6 +70,7 @@ export default function Studio() {
   const [sourceUrls, setSourceUrls] = useState<string[]>([]);
   const [storyTitle, setStoryTitle] = useState('AI가 보안 코드의 안전성을 증명했다고?');
   const captureRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const shareSignature = JSON.stringify({ slides, selected, theme, category, brand });
 
   useEffect(() => {
     if (!adminClient) { setAuthChecking(false); return; }
@@ -235,6 +239,50 @@ export default function Studio() {
     finally { setBusy(false); setProgress(''); }
   }
 
+  function sharePhotos(kind: ShareKind) {
+    if (busy) return;
+    if (!navigator.share || !navigator.canShare) {
+      setNotice('이 브라우저에서는 사진 공유를 지원하지 않습니다. PNG 또는 ZIP 다운로드를 이용해주세요.');
+      if (kind === 'one') void downloadOne(); else void downloadAll();
+      return;
+    }
+    const ready = preparedShare?.kind === kind && preparedShare.signature === shareSignature;
+    if (ready) {
+      if (!navigator.canShare({ files: preparedShare.files })) {
+        setNotice('이 브라우저에서 PNG 공유를 지원하지 않습니다. 다운로드 버튼을 이용해주세요.');
+        return;
+      }
+      // Share must start directly in the tap handler to preserve browser user activation.
+      void navigator.share({ files: preparedShare.files }).then(() => {
+        setNotice('공유 화면에서 사진 저장을 선택해주세요.');
+      }).catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setNotice('공유 화면을 열지 못했습니다. PNG 다운로드를 이용해주세요.');
+      });
+      return;
+    }
+    void preparePhotos(kind, shareSignature);
+  }
+
+  async function preparePhotos(kind: ShareKind, signature: string) {
+    setBusy(true); setProgress('사진 공유 준비 중...'); setNotice(''); setPreparedShare(null);
+    try {
+      const styles = await fontStyles();
+      const indices = kind === 'one' ? [selected] : slides.map((_, i) => i);
+      const files: File[] = [];
+      for (const i of indices) {
+        setProgress(`${i + 1}번 카드 PNG 생성 중...`);
+        files.push(new File([await renderSlide(i, styles)], fileName(i), { type: 'image/png' }));
+      }
+      if (!navigator.canShare({ files })) throw new Error('이 브라우저에서 PNG 파일 공유를 지원하지 않습니다.');
+      setPreparedShare({ kind, signature, files });
+      setNotice(`${files.length}장 준비 완료! 같은 사진 공유 버튼을 한 번 더 누르면 앨범 저장 메뉴가 열립니다.`);
+    } catch (error) { setNotice(`공유 준비 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`); }
+    finally { setBusy(false); setProgress(''); }
+  }
+
+  const readyToShare = (kind: ShareKind) => preparedShare?.kind === kind && preparedShare.signature === shareSignature;
+
   async function copyContent() {
     const content = slides.map((slide, i) => `${i + 1}. ${slide.title}\n${slide.body}`).join('\n\n');
     try { await navigator.clipboard.writeText(content); setNotice('카드 원고를 복사했습니다.'); }
@@ -243,7 +291,7 @@ export default function Studio() {
 
   return <main className="app-shell">
     <header className="header"><div className="logo"><div className="logo-icon"><Layers3 size={22} /></div><div><strong>trend<span>studio.</span></strong><small>CONTENT DESIGN WORKSPACE</small></div></div><div className="header-right"><span className="version">BETA / 0.1</span><span className="saved"><span /> Local preview</span></div></header>
-    <section className="top-heading"><div><div className="eyebrow"><Sparkles size={14}/> YOUR CREATIVE WORKSPACE</div><h1>카드뉴스 스튜디오<span>.</span></h1><p>하나의 스토리를 다섯 장의 콘텐츠로. 원고를 다듬고, 스타일을 고르고, 바로 내보내세요.</p></div><button className="primary-button top-download" onClick={downloadAll} disabled={busy}><ArrowDownToLine size={17}/>{busy ? progress : '5장 전체 다운로드'}</button></section>
+    <section className="top-heading"><div><div className="eyebrow"><Sparkles size={14}/> YOUR CREATIVE WORKSPACE</div><h1>카드뉴스 스튜디오<span>.</span></h1><p>하나의 스토리를 다섯 장의 콘텐츠로. 원고를 다듬고, 스타일을 고르고, 바로 내보내세요.</p></div><div className="top-actions"><button className="primary-button share-button" onClick={() => sharePhotos('all')} disabled={busy}><Images size={17}/>{busy ? progress : readyToShare('all') ? '5장 공유 메뉴 열기' : '5장 사진 공유 준비'}</button><button className="primary-button top-download" onClick={downloadAll} disabled={busy}><ArrowDownToLine size={17}/>5장 ZIP 다운로드</button></div></section>
     <section className="import-panel panel">
       <div className="import-panel-title"><div><span className="step-label">CONTENT PIPELINE</span><h2>ChatGPT 원고 가져오기</h2><p>JSON을 붙여넣거나 관리자 계정으로 로그인해 저장된 초안을 관리하세요.</p></div><button className="import-toggle" onClick={() => setShowImport(open => !open)}><FileJson size={16}/>{showImport ? '가져오기 닫기' : 'JSON 가져오기'}</button></div>
       {showImport && <div className="import-content"><div><label htmlFor="json-input">ChatGPT 원고 JSON</label><textarea id="json-input" value={jsonText} onChange={event => setJsonText(event.target.value)} placeholder='{"title":"뉴스 제목","category":"TECH / AI","slides":[...]}' rows={7}/><div className="import-buttons"><button onClick={importJson}>5장 카드에 적용</button><button onClick={exportJson}>현재 원고 JSON 내보내기</button></div></div></div>}
@@ -273,7 +321,7 @@ export default function Studio() {
         <div className="edit-fields"><label>상단 라벨<input maxLength={35} value={slides[selected].kicker} onChange={e => updateSlide('kicker', e.target.value)}/></label><label>카드 제목<textarea rows={3} maxLength={110} value={slides[selected].title} onChange={e => updateSlide('title', e.target.value)}/><span className="character-count">{slides[selected].title.length} / 110</span></label><label>본문 내용<textarea rows={6} maxLength={350} value={slides[selected].body} onChange={e => updateSlide('body', e.target.value)}/><span className="character-count">{slides[selected].body.length} / 350</span></label></div>
         <div className="editor-actions"><button onClick={() => { setSlides(initialSlides); setCategory('TECH / AI'); setBrand('TREND BRIEF'); setSelected(0); setNotice('샘플 콘텐츠로 복원했습니다.'); }}><RotateCcw size={15}/> 초기화</button><button onClick={copyContent}><Copy size={15}/> 원고 복사</button></div>
       </aside>
-      <section className="panel preview-panel"><div className="panel-heading preview-title"><div><span className="step-label">02 / LIVE PREVIEW</span><h2>실시간 미리보기</h2><p>1080 × 1350px · Instagram 4:5</p></div><span className="preview-live"><span/> LIVE</span></div><div className="preview-stage"><div className="preview-card-wrap"><Card slide={slides[selected]} index={selected} theme={theme} category={category} brand={brand}/></div></div><div className="preview-navigation"><button aria-label="이전 카드" onClick={() => setSelected(i => Math.max(0, i - 1))} disabled={selected === 0}><ArrowLeft size={17}/></button><div className="navigation-dots">{slides.map((_, i) => <button key={i} aria-label={`${i + 1}번 카드`} className={i === selected ? 'active' : ''} onClick={() => setSelected(i)}/>)}</div><button aria-label="다음 카드" onClick={() => setSelected(i => Math.min(4, i + 1))} disabled={selected === 4}><ArrowRight size={17}/></button></div><button className="secondary-download" disabled={busy} onClick={downloadOne}><ArrowDownToLine size={16}/> 현재 카드 PNG 다운로드</button></section>
+      <section className="panel preview-panel"><div className="panel-heading preview-title"><div><span className="step-label">02 / LIVE PREVIEW</span><h2>실시간 미리보기</h2><p>1080 × 1350px · Instagram 4:5</p></div><span className="preview-live"><span/> LIVE</span></div><div className="preview-stage"><div className="preview-card-wrap"><Card slide={slides[selected]} index={selected} theme={theme} category={category} brand={brand}/></div></div><div className="preview-navigation"><button aria-label="이전 카드" onClick={() => setSelected(i => Math.max(0, i - 1))} disabled={selected === 0}><ArrowLeft size={17}/></button><div className="navigation-dots">{slides.map((_, i) => <button key={i} aria-label={`${i + 1}번 카드`} className={i === selected ? 'active' : ''} onClick={() => setSelected(i)}/>)}</div><button aria-label="다음 카드" onClick={() => setSelected(i => Math.min(4, i + 1))} disabled={selected === 4}><ArrowRight size={17}/></button></div><div className="preview-export-actions"><button className="secondary-download" disabled={busy} onClick={() => sharePhotos('one')}><Share2 size={16}/>{readyToShare('one') ? '현재 카드 공유 메뉴 열기' : '현재 카드 사진 공유 준비'}</button><button className="secondary-download" disabled={busy} onClick={downloadOne}><ArrowDownToLine size={16}/> 현재 카드 PNG 다운로드</button></div></section>
       <aside className="panel style-panel"><div className="panel-heading"><span className="step-label">03 / DESIGN SYSTEM</span><h2>디자인 스타일</h2><p>콘텐츠에 맞는 무드를 선택하세요.</p></div><div className="themes">{themes.map(item => <button key={item.id} className={`theme-option ${theme === item.id ? 'active' : ''}`} onClick={() => setTheme(item.id)}><span className="theme-swatches">{item.colors.map(color => <span key={color} style={{ background: color }}/>)}</span><span className="theme-info"><strong>{item.name}</strong><small>{item.description}</small></span>{theme === item.id ? <span className="selected-check"><Check size={14}/></span> : <ChevronDown className="choose-arrow" size={15}/>}</button>)}</div><div className="info-card"><Sparkles size={18}/><strong>DESIGN TIP</strong><p>긴 문장은 두세 문장으로 나눠보세요. 카드 한 장에 메시지 하나만 담으면 더 잘 읽힙니다.</p></div><div className="export-summary"><span>EXPORT SETTINGS</span><div><span>Format</span><strong>PNG</strong></div><div><span>Resolution</span><strong>1080 × 1350</strong></div><div><span>Cards</span><strong>5 slides</strong></div><div><span>Bundle</span><strong>ZIP archive</strong></div></div></aside>
     </section><footer className="footer"><span>© 2026 Trend Studio. Built for stories worth sharing.</span><span>뉴스의 사실 관계와 저작권은 게시 전 확인해주세요.</span></footer>{notice && <div className="toast" role="status">{notice}<button onClick={() => setNotice('')} aria-label="알림 닫기">×</button></div>}
     <div className="capture-container" aria-hidden="true">{slides.map((slide, i) => <div className="capture-item" key={i} ref={el => { captureRefs.current[i] = el; }}><Card slide={slide} index={i} theme={theme} category={category} brand={brand} capture/></div>)}</div>
