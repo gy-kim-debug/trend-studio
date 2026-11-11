@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getFontEmbedCSS, toBlob } from 'html-to-image';
 import JSZip from 'jszip';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, FileJson, Images, Layers3, LockKeyhole, LogOut, RotateCcw, Share2, Sparkles, TrendingUp, ExternalLink, Newspaper, CalendarDays, PencilLine, RefreshCw } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, FileJson, Images, Layers3, LockKeyhole, LogOut, RotateCcw, Share2, Sparkles, TrendingUp, ExternalLink, Newspaper, CalendarDays, PencilLine, RefreshCw, ImagePlus, Plus, Trash2 } from 'lucide-react';
 import { CardDraft, parseCardDraft, Slide } from '@/lib/content';
 
 type Theme = 'midnight' | 'paper' | 'citrus';
@@ -35,11 +35,13 @@ const adminClient: SupabaseClient | null = authUrl && authKey
   ? createClient(authUrl, authKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 
-function Card({ slide, index, theme, category, brand, capture = false }: { slide: Slide; index: number; theme: Theme; category: string; brand: string; capture?: boolean }) {
+function Card({ slide, index, total, theme, category, brand, capture = false }: { slide: Slide; index: number; total: number; theme: Theme; category: string; brand: string; capture?: boolean }) {
+  const visual = Boolean(slide.imageUrl && slide.layout !== 'text');
   return (
-    <article className={`news-card theme-${theme}`} data-capture={capture ? 'true' : undefined}>
+    <article className={`news-card theme-${theme} ${index === 0 ? 'cover-card' : 'body-card'} ${visual ? `visual-card visual-${slide.layout}` : ''}`} data-capture={capture ? 'true' : undefined}>
       <div className="card-shape shape-one" /><div className="card-shape shape-two" />
-      <div className="card-top"><span className="card-tag">{category || 'TREND'}</span><span className="card-number">{String(index + 1).padStart(2, '0')} / 05</span></div>
+      <div className="card-top"><span className="card-tag">{category || 'TREND'}</span><span className="card-number">{String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div>
+      {visual && <div className="card-media"><img src={slide.imageUrl} alt="카드에 첨부한 이미지" crossOrigin="anonymous" /></div>}
       <div className="card-content">
         <div className="card-rule" /><p className="card-kicker">{slide.kicker || 'THE STORY'}</p>
         <h2>{slide.title || '제목을 입력하세요'}</h2>
@@ -73,12 +75,15 @@ export default function Studio() {
   const [signedInEmail, setSignedInEmail] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
-  const [remoteDrafts, setRemoteDrafts] = useState<{ id: string; title: string; category: string; brand: string; source_urls: string[]; slides: Slide[] }[]>([]);
+  const [remoteDrafts, setRemoteDrafts] = useState<{ id: string; title: string; category: string; brand: string; source_urls: string[]; slides: Slide[]; caption: string; hashtags: string }[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [trendRows, setTrendRows] = useState<TrendRow[]>([]);
   const [loadingTrends, setLoadingTrends] = useState(false);
   const [sourceUrls, setSourceUrls] = useState<string[]>([]);
   const [storyTitle, setStoryTitle] = useState('AI가 보안 코드의 안전성을 증명했다고?');
+  const [caption, setCaption] = useState('');
+  const [hashtags, setHashtags] = useState('');
+  const [uploadBusy, setUploadBusy] = useState(false);
   const captureRefs = useRef<(HTMLDivElement | null)[]>([]);
   const shareSignature = JSON.stringify({ slides, selected, theme, category, brand });
 
@@ -141,11 +146,26 @@ export default function Studio() {
   }
 
   const updateSlide = (key: keyof Slide, value: string) => setSlides(current => current.map((slide, i) => i === selected ? { ...slide, [key]: value } : slide));
+  const addSlide = () => { if (slides.length >= 8) return; setSlides(current => [...current, { kicker: 'NEXT TREND', title: '새 카드 제목', body: '전달할 핵심 내용을 입력하세요.', layout: 'text' }]); setSelected(slides.length); };
+  const removeSlide = () => { if (slides.length <= 4) return; setSlides(current => current.filter((_, i) => i !== selected)); setSelected(i => Math.max(0, Math.min(i, slides.length - 2))); };
+  async function uploadImage(file?: File) {
+    if (!file) return;
+    setUploadBusy(true); setNotice('이미지 업로드 중...');
+    try {
+      const form = new FormData(); form.append('file', file);
+      const res = await fetch('/api/media', { method: 'POST', headers: await authHeader(), body: form });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? '업로드 실패');
+      setSlides(current => current.map((slide, i) => i === selected ? { ...slide, imagePath: result.imagePath, imageUrl: result.imageUrl, layout: slide.layout === 'text' || !slide.layout ? 'image' : slide.layout } : slide));
+      setNotice('이미지가 추가되었습니다. 카드 레이아웃을 선택해주세요.');
+    } catch (error) { setNotice(`이미지 업로드 실패: ${error instanceof Error ? error.message : '오류'}`); }
+    finally { setUploadBusy(false); }
+  }
   const fileName = (i: number) => `trend-studio-${String(i + 1).padStart(2, '0')}.png`;
 
   function applyDraft(draft: CardDraft) {
     setSlides(draft.slides); setCategory(draft.category); setBrand(draft.brand);
-    setSourceUrls(draft.sourceUrls); setStoryTitle(draft.title); setSelected(0);
+    setSourceUrls(draft.sourceUrls); setStoryTitle(draft.title); setCaption(draft.caption ?? ''); setHashtags(draft.hashtags ?? ''); setSelected(0);
     setView('editor');
     setNotice('콘텐츠를 불러왔습니다. 게시 전 사실 관계를 검토해주세요.');
   }
@@ -156,7 +176,7 @@ export default function Studio() {
   }
 
   function exportJson() {
-    const data: CardDraft = { title: storyTitle, category, brand, sourceUrls, slides };
+    const data: CardDraft = { title: storyTitle, category, brand, sourceUrls, slides: slides.map(({ imageUrl: _url, ...slide }) => slide), caption, hashtags };
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
     download(url, 'trend-studio-draft.json');
     window.setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -178,7 +198,7 @@ export default function Studio() {
   async function saveDraft() {
     setLoadingDrafts(true);
     try {
-      const payload: CardDraft = { title: storyTitle.trim() || slides[0].title, category, brand, sourceUrls, slides };
+      const payload: CardDraft = { title: storyTitle.trim() || slides[0].title, category, brand, sourceUrls, slides, caption, hashtags };
       const response = await fetch('/api/drafts', {
         method: 'POST', headers: { ...await authHeader(), 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -268,7 +288,7 @@ export default function Studio() {
       const url = URL.createObjectURL(blob);
       download(url, 'trend-studio-cards.zip');
       window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-      setNotice('카드 5장을 ZIP으로 다운로드했습니다.');
+      setNotice(`카드 ${slides.length}장을 ZIP으로 다운로드했습니다.`);
     } catch (error) { setNotice(`이미지 생성 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`); }
     finally { setBusy(false); setProgress(''); }
   }
@@ -322,6 +342,10 @@ export default function Studio() {
     try { await navigator.clipboard.writeText(content); setNotice('카드 원고를 복사했습니다.'); }
     catch { setNotice('복사할 수 없습니다. 브라우저 권한을 확인해주세요.'); }
   }
+  async function copyCaption() {
+    try { await navigator.clipboard.writeText([caption.trim(), hashtags.trim()].filter(Boolean).join('\n\n')); setNotice('인스타 게시글 내용을 복사했습니다.'); }
+    catch { setNotice('복사할 수 없습니다. 브라우저 권한을 확인해주세요.'); }
+  }
 
   const days = [...new Set(trendRows.map(item => koreanDate(item.created_at)))];
   const visibleTrends = dateFilter === 'all' ? trendRows : trendRows.filter(item => koreanDate(item.created_at) === dateFilter);
@@ -333,11 +357,11 @@ export default function Studio() {
       <button className={view === 'drafts' ? 'active' : ''} aria-current={view === 'drafts' ? 'page' : undefined} onClick={() => setView('drafts')}><Newspaper size={18}/> 내 게시글</button>
       <button className={view === 'editor' ? 'active' : ''} aria-current={view === 'editor' ? 'page' : undefined} onClick={() => setView('editor')}><PencilLine size={18}/> 카드 편집기</button>
     </nav>
-    {view === 'editor' && <section className="top-heading"><div><div className="eyebrow"><Sparkles size={14}/> YOUR CREATIVE WORKSPACE</div><h1>카드뉴스 스튜디오<span>.</span></h1><p>하나의 스토리를 다섯 장의 콘텐츠로. 원고를 다듬고, 스타일을 고르고, 바로 내보내세요.</p></div><div className="top-actions"><button className="primary-button share-button" onClick={() => sharePhotos('all')} disabled={busy}><Images size={17}/>{busy ? progress : readyToShare('all') ? '5장 공유 메뉴 열기' : '5장 사진 공유 준비'}</button><button className="primary-button top-download" onClick={downloadAll} disabled={busy}><ArrowDownToLine size={17}/>5장 ZIP 다운로드</button></div></section>}
+    {view === 'editor' && <section className="top-heading"><div><div className="eyebrow"><Sparkles size={14}/> YOUR CREATIVE WORKSPACE</div><h1>카드뉴스 스튜디오<span>.</span></h1><p>4~8장의 이미지와 텍스트를 편집하고 인스타 게시글까지 준비하세요.</p></div><div className="top-actions"><button className="primary-button share-button" onClick={() => sharePhotos('all')} disabled={busy}><Images size={17}/>{busy ? progress : readyToShare('all') ? `${slides.length}장 공유 메뉴 열기` : `${slides.length}장 사진 공유 준비`}</button><button className="primary-button top-download" onClick={downloadAll} disabled={busy}><ArrowDownToLine size={17}/>{slides.length}장 ZIP 다운로드</button></div></section>}
     <section className={`import-panel panel ${view !== 'editor' ? 'account-strip' : ''}`}>
       {view === 'editor' && <>
       <div className="import-panel-title"><div><span className="step-label">CONTENT PIPELINE</span><h2>ChatGPT 원고 가져오기</h2><p>JSON을 붙여넣거나 관리자 계정으로 로그인해 저장된 초안을 관리하세요.</p></div><button className="import-toggle" onClick={() => setShowImport(open => !open)}><FileJson size={16}/>{showImport ? '가져오기 닫기' : 'JSON 가져오기'}</button></div>
-      {showImport && <div className="import-content"><div><label htmlFor="json-input">ChatGPT 원고 JSON</label><textarea id="json-input" value={jsonText} onChange={event => setJsonText(event.target.value)} placeholder='{"title":"뉴스 제목","category":"TECH / AI","slides":[...]}' rows={7}/><div className="import-buttons"><button onClick={importJson}>5장 카드에 적용</button><button onClick={exportJson}>현재 원고 JSON 내보내기</button></div></div></div>}
+      {showImport && <div className="import-content"><div><label htmlFor="json-input">ChatGPT 원고 JSON</label><textarea id="json-input" value={jsonText} onChange={event => setJsonText(event.target.value)} placeholder='{"title":"뉴스 제목","category":"TECH / AI","slides":[...]}' rows={7}/><div className="import-buttons"><button onClick={importJson}>4~8장 카드에 적용</button><button onClick={exportJson}>현재 원고 JSON 내보내기</button></div></div></div>}
       </>}
       <div className="admin-panel">
         <div className="admin-panel-head"><span className="admin-icon"><LockKeyhole size={18}/></span><div><strong>관리자 스튜디오</strong><small>{signedInEmail ? `로그인: ${signedInEmail}` : '로그인 후 카드뉴스를 저장하고 관리할 수 있습니다.'}</small></div>{signedInEmail && <button className="admin-logout" onClick={logoutAdmin}><LogOut size={14}/> 로그아웃</button>}</div>
@@ -352,13 +376,13 @@ export default function Studio() {
             <button className="admin-password-toggle" onClick={() => setShowPasswordUpdate(value => !value)}>{showPasswordUpdate ? '비밀번호 설정 닫기' : '초대받았나요? 비밀번호 설정·변경'}</button>
             {showPasswordUpdate && <form className="admin-login admin-password-form" onSubmit={updateAdminPassword}><label>새 비밀번호 (12자 이상)<input type="password" autoComplete="new-password" minLength={12} required value={newPassword} onChange={event => setNewPassword(event.target.value)}/></label><button className="admin-submit" type="submit" disabled={authBusy}>{authBusy ? '설정 중...' : '비밀번호 설정'}</button></form>}
             <label>게시글 제목<input maxLength={160} value={storyTitle} onChange={event => setStoryTitle(event.target.value)}/></label>
-            <div className="admin-buttons"><button onClick={saveDraft} disabled={loadingDrafts}>현재 5장 초안 저장</button><button onClick={() => setView('drafts')}>내 게시글 보기</button></div>
+            <div className="admin-buttons"><button onClick={saveDraft} disabled={loadingDrafts}>현재 {slides.length}장 초안 저장</button><button onClick={() => setView('drafts')}>내 게시글 보기</button></div>
           </div>
         ) : null}
       </div>
     </section>
     {view === 'trends' && <section className="collection-page">
-      <div className="collection-header"><div><span className="step-label">DAILY TREND RADAR</span><h1>오늘의 트렌드<span>.</span></h1><p>화제성 50% + 정보 가치 50% · 관심 가는 주제를 선택해 5장 카드뉴스로 만들어보세요.</p></div><button className="collection-refresh" disabled={loadingTrends || !signedInEmail} onClick={fetchTrends}><RefreshCw size={16}/>{loadingTrends ? '조회 중...' : '새로고침'}</button></div>
+      <div className="collection-header"><div><span className="step-label">DAILY TREND RADAR</span><h1>오늘의 트렌드<span>.</span></h1><p>정보 가치 55% · 화제성 30% · 시각적 매력 15%를 기준으로 검토합니다.</p></div><button className="collection-refresh" disabled={loadingTrends || !signedInEmail} onClick={fetchTrends}><RefreshCw size={16}/>{loadingTrends ? '조회 중...' : '새로고침'}</button></div>
       {signedInEmail ? <><div className="collection-controls"><div><strong>{visibleTrends.length}개 트렌드</strong><small>출처와 선정 이유를 확인한 후 편집하세요.</small></div><label><CalendarDays size={16}/><select aria-label="수집 날짜" value={dateFilter} onChange={e => setDateFilter(e.target.value)}><option value="all">전체 날짜</option>{days.map(day => <option key={day} value={day}>{day}</option>)}</select></label></div>
         {trendsLoaded && visibleTrends.length === 0 && <div className="collection-empty">{dateFilter === 'all' ? '아직 저장된 트렌드가 없습니다.' : '선택한 날짜에 수집된 트렌드가 없습니다.'}</div>}
         <div className="trend-grid">{visibleTrends.map(trend => <article className="trend-item" key={trend.id}>
@@ -367,23 +391,26 @@ export default function Studio() {
           <div className="trend-metrics"><span>화제성 <strong>{trend.buzz_score}</strong></span><span>정보 가치 <strong>{trend.value_score}</strong></span></div>
           <div className="trend-why"><strong>왜 지금?</strong><p>{trend.why_now}</p></div>
           <div className="trend-sources">{trend.source_urls.map((url, i) => <a key={url} href={url} target="_blank" rel="noopener noreferrer">출처 {i + 1} <ExternalLink size={12}/></a>)}</div>
-          <button className="trend-apply" onClick={() => { try { applyDraft(parseCardDraft(trend.draft)); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { setNotice('후보 원고 형식이 올바르지 않습니다.'); } }}>5장 카드 편집하기 <ArrowRight size={15}/></button>
+          <button className="trend-apply" onClick={() => { try { applyDraft(parseCardDraft(trend.draft)); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { setNotice('후보 원고 형식이 올바르지 않습니다.'); } }}>카드 편집하기 <ArrowRight size={15}/></button>
         </article>)}</div>
       </> : <div className="collection-empty">관리자 로그인 후 수집된 트렌드를 확인할 수 있습니다.</div>}
     </section>}
     {view === 'drafts' && <section className="collection-page"><div className="collection-header"><div><span className="step-label">MY CONTENT LIBRARY</span><h1>내 게시글<span>.</span></h1><p>저장한 카드뉴스를 다시 불러와 수정하고 새 버전으로 저장하세요.</p></div><button className="collection-refresh" disabled={loadingDrafts || !signedInEmail} onClick={fetchDrafts}><RefreshCw size={16}/>{loadingDrafts ? '조회 중...' : '새로고침'}</button></div>
-      {signedInEmail ? <><div className="collection-controls"><div><strong>저장된 게시글 {remoteDrafts.length}개</strong><small>최근 저장된 초안 30개를 표시합니다.</small></div><button className="collection-refresh" onClick={() => setView('editor')}><PencilLine size={15}/> 새 카드 만들기</button></div><div className="trend-grid">{remoteDrafts.map(draft => <article className="trend-item" key={draft.id}><div className="trend-item-head"><span className="trend-category">{draft.category}</span><span>5 SLIDES</span></div><h3>{draft.title}</h3><p>이전에 저장한 카드뉴스를 불러와 수정할 수 있습니다.</p><button className="trend-apply" onClick={() => { try { applyDraft(parseCardDraft({ title: draft.title, category: draft.category, brand: draft.brand, sourceUrls: draft.source_urls, slides: draft.slides })); } catch { setNotice('서버 초안 형식이 올바르지 않습니다.'); } }}>편집기로 불러오기 <ArrowRight size={15}/></button></article>)}</div>{draftsLoaded && remoteDrafts.length === 0 && <div className="collection-empty">저장된 게시글이 없습니다. 카드 편집기에서 첫 초안을 저장해보세요.</div>}</> : <div className="collection-empty">관리자 로그인 후 저장된 게시글을 확인할 수 있습니다.</div>}
+      {signedInEmail ? <><div className="collection-controls"><div><strong>저장된 게시글 {remoteDrafts.length}개</strong><small>최근 저장된 초안 30개를 표시합니다.</small></div><button className="collection-refresh" onClick={() => setView('editor')}><PencilLine size={15}/> 새 카드 만들기</button></div><div className="trend-grid">{remoteDrafts.map(draft => <article className="trend-item" key={draft.id}><div className="trend-item-head"><span className="trend-category">{draft.category}</span><span>{draft.slides.length} SLIDES</span></div><h3>{draft.title}</h3><p>이전에 저장한 카드뉴스를 불러와 수정할 수 있습니다.</p><button className="trend-apply" onClick={() => { try { applyDraft({ ...parseCardDraft({ title: draft.title, category: draft.category, brand: draft.brand, sourceUrls: draft.source_urls, slides: draft.slides, caption: draft.caption, hashtags: draft.hashtags }), slides: draft.slides }); } catch { setNotice('서버 초안 형식이 올바르지 않습니다.'); } }}>편집기로 불러오기 <ArrowRight size={15}/></button></article>)}</div>{draftsLoaded && remoteDrafts.length === 0 && <div className="collection-empty">저장된 게시글이 없습니다. 카드 편집기에서 첫 초안을 저장해보세요.</div>}</> : <div className="collection-empty">관리자 로그인 후 저장된 게시글을 확인할 수 있습니다.</div>}
     </section>}
     {view === 'editor' && <section className="workspace">
       <aside className="panel editor-panel"><div className="panel-heading"><span className="step-label">01 / CONTENT EDITOR</span><h2>콘텐츠 편집</h2><p>카드를 선택하고 내용을 수정해보세요.</p></div>
         <div className="field-row"><label>카테고리<input maxLength={25} value={category} onChange={e => setCategory(e.target.value)}/></label><label>브랜드명<input maxLength={24} value={brand} onChange={e => setBrand(e.target.value)}/></label></div>
-        <div className="slide-section-title"><span>카드 구성</span><span>5 SLIDES</span></div><div className="slide-tabs">{slides.map((slide, i) => <button key={i} className={i === selected ? 'active' : ''} onClick={() => setSelected(i)}><span>{String(i + 1).padStart(2, '0')}</span><small>{['표지', '핵심 사실', '배경 설명', '영향', '마무리'][i]}</small></button>)}</div>
+        <div className="slide-section-title"><span>카드 구성</span><span>{slides.length} / 8 SLIDES</span></div><div className="slide-tabs">{slides.map((slide, i) => <button key={i} className={i === selected ? 'active' : ''} onClick={() => setSelected(i)}><span>{String(i + 1).padStart(2, '0')}</span><small>{i === 0 ? '표지' : i === slides.length - 1 ? '마무리' : '본문'}</small></button>)}</div>
+        <div className="slide-controls"><button disabled={slides.length >= 8} onClick={addSlide}><Plus size={15}/> 카드 추가</button><button disabled={slides.length <= 4} onClick={removeSlide}><Trash2 size={15}/> 현재 카드 삭제</button></div>
         <div className="edit-fields"><label>상단 라벨<input maxLength={35} value={slides[selected].kicker} onChange={e => updateSlide('kicker', e.target.value)}/></label><label>카드 제목<textarea rows={3} maxLength={110} value={slides[selected].title} onChange={e => updateSlide('title', e.target.value)}/><span className="character-count">{slides[selected].title.length} / 110</span></label><label>본문 내용<textarea rows={6} maxLength={350} value={slides[selected].body} onChange={e => updateSlide('body', e.target.value)}/><span className="character-count">{slides[selected].body.length} / 350</span></label></div>
+        <div className="media-editor"><strong><ImagePlus size={16}/> 카드 이미지</strong><p>직접 촬영했거나 사용 권한이 있는 이미지를 업로드하세요. PNG·JPG·WebP, 최대 8MB.</p><label className="upload-trigger">{uploadBusy ? '업로드 중...' : '이미지 선택 / 업로드'}<input type="file" accept="image/png,image/jpeg,image/webp" disabled={!signedInEmail || uploadBusy} onChange={event => { void uploadImage(event.target.files?.[0]); event.target.value = ''; }}/></label><label>이미지와 글 배치<select value={slides[selected].layout ?? 'text'} onChange={event => updateSlide('layout', event.target.value)}><option value="text">텍스트 중심</option><option value="image" disabled={!slides[selected].imageUrl}>이미지 강조형</option><option value="split" disabled={!slides[selected].imageUrl}>균형형 (이미지 + 텍스트)</option></select></label>{slides[selected].imagePath && <button className="remove-image" onClick={() => setSlides(current => current.map((slide, i) => i === selected ? { ...slide, imagePath: undefined, imageUrl: undefined, layout: 'text' } : slide))}>이 카드에서 이미지 제거</button>}</div>
         <div className="editor-actions"><button onClick={() => { setSlides(initialSlides); setCategory('TECH / AI'); setBrand('TREND BRIEF'); setSelected(0); setNotice('샘플 콘텐츠로 복원했습니다.'); }}><RotateCcw size={15}/> 초기화</button><button onClick={copyContent}><Copy size={15}/> 원고 복사</button></div>
+        <div className="caption-editor"><h3>인스타 게시글</h3><p>카드뉴스와 함께 올릴 캡션 및 해시태그를 수정하고 복사하세요.</p><label>게시글 내용<textarea rows={8} maxLength={2200} placeholder="ChatGPT가 작성한 인스타 캡션을 입력하세요." value={caption} onChange={event => setCaption(event.target.value)}/></label><label>해시태그<textarea rows={3} maxLength={500} placeholder="#오늘의트렌드 #트렌드" value={hashtags} onChange={event => setHashtags(event.target.value)}/></label><button onClick={copyCaption}><Copy size={15}/> 인스타 게시글 복사</button></div>
       </aside>
-      <section className="panel preview-panel"><div className="panel-heading preview-title"><div><span className="step-label">02 / LIVE PREVIEW</span><h2>실시간 미리보기</h2><p>1080 × 1350px · Instagram 4:5</p></div><span className="preview-live"><span/> LIVE</span></div><div className="preview-stage"><div className="preview-card-wrap"><Card slide={slides[selected]} index={selected} theme={theme} category={category} brand={brand}/></div></div><div className="preview-navigation"><button aria-label="이전 카드" onClick={() => setSelected(i => Math.max(0, i - 1))} disabled={selected === 0}><ArrowLeft size={17}/></button><div className="navigation-dots">{slides.map((_, i) => <button key={i} aria-label={`${i + 1}번 카드`} className={i === selected ? 'active' : ''} onClick={() => setSelected(i)}/>)}</div><button aria-label="다음 카드" onClick={() => setSelected(i => Math.min(4, i + 1))} disabled={selected === 4}><ArrowRight size={17}/></button></div><div className="preview-export-actions"><button className="secondary-download" disabled={busy} onClick={() => sharePhotos('one')}><Share2 size={16}/>{readyToShare('one') ? '현재 카드 공유 메뉴 열기' : '현재 카드 사진 공유 준비'}</button><button className="secondary-download" disabled={busy} onClick={downloadOne}><ArrowDownToLine size={16}/> 현재 카드 PNG 다운로드</button></div></section>
-      <aside className="panel style-panel"><div className="panel-heading"><span className="step-label">03 / DESIGN SYSTEM</span><h2>디자인 스타일</h2><p>콘텐츠에 맞는 무드를 선택하세요.</p></div><div className="themes">{themes.map(item => <button key={item.id} className={`theme-option ${theme === item.id ? 'active' : ''}`} onClick={() => setTheme(item.id)}><span className="theme-swatches">{item.colors.map(color => <span key={color} style={{ background: color }}/>)}</span><span className="theme-info"><strong>{item.name}</strong><small>{item.description}</small></span>{theme === item.id ? <span className="selected-check"><Check size={14}/></span> : <ChevronDown className="choose-arrow" size={15}/>}</button>)}</div><div className="info-card"><Sparkles size={18}/><strong>DESIGN TIP</strong><p>긴 문장은 두세 문장으로 나눠보세요. 카드 한 장에 메시지 하나만 담으면 더 잘 읽힙니다.</p></div><div className="export-summary"><span>EXPORT SETTINGS</span><div><span>Format</span><strong>PNG</strong></div><div><span>Resolution</span><strong>1080 × 1350</strong></div><div><span>Cards</span><strong>5 slides</strong></div><div><span>Bundle</span><strong>ZIP archive</strong></div></div></aside>
+      <section className="panel preview-panel"><div className="panel-heading preview-title"><div><span className="step-label">02 / LIVE PREVIEW</span><h2>실시간 미리보기</h2><p>1080 × 1350px · Instagram 4:5</p></div><span className="preview-live"><span/> LIVE</span></div><div className="preview-stage"><div className="preview-card-wrap"><Card slide={slides[selected]} index={selected} total={slides.length} theme={theme} category={category} brand={brand}/></div></div><div className="preview-navigation"><button aria-label="이전 카드" onClick={() => setSelected(i => Math.max(0, i - 1))} disabled={selected === 0}><ArrowLeft size={17}/></button><div className="navigation-dots">{slides.map((_, i) => <button key={i} aria-label={`${i + 1}번 카드`} className={i === selected ? 'active' : ''} onClick={() => setSelected(i)}/>)}</div><button aria-label="다음 카드" onClick={() => setSelected(i => Math.min(slides.length - 1, i + 1))} disabled={selected === slides.length - 1}><ArrowRight size={17}/></button></div><div className="preview-export-actions"><button className="secondary-download" disabled={busy} onClick={() => sharePhotos('one')}><Share2 size={16}/>{readyToShare('one') ? '현재 카드 공유 메뉴 열기' : '현재 카드 사진 공유 준비'}</button><button className="secondary-download" disabled={busy} onClick={downloadOne}><ArrowDownToLine size={16}/> 현재 카드 PNG 다운로드</button></div></section>
+      <aside className="panel style-panel"><div className="panel-heading"><span className="step-label">03 / DESIGN SYSTEM</span><h2>디자인 스타일</h2><p>콘텐츠에 맞는 무드를 선택하세요.</p></div><div className="themes">{themes.map(item => <button key={item.id} className={`theme-option ${theme === item.id ? 'active' : ''}`} onClick={() => setTheme(item.id)}><span className="theme-swatches">{item.colors.map(color => <span key={color} style={{ background: color }}/>)}</span><span className="theme-info"><strong>{item.name}</strong><small>{item.description}</small></span>{theme === item.id ? <span className="selected-check"><Check size={14}/></span> : <ChevronDown className="choose-arrow" size={15}/>}</button>)}</div><div className="info-card"><Sparkles size={18}/><strong>DESIGN TIP</strong><p>표지는 큰 제목 중심으로, 나머지 카드는 이미지와 한 가지 핵심 정보만 담아보세요.</p></div><div className="export-summary"><span>EXPORT SETTINGS</span><div><span>Format</span><strong>PNG</strong></div><div><span>Resolution</span><strong>1080 × 1350</strong></div><div><span>Cards</span><strong>{slides.length} slides</strong></div><div><span>Bundle</span><strong>ZIP archive</strong></div></div></aside>
     </section>}<footer className="footer"><span>© 2026 Trend Studio. Built for stories worth sharing.</span><span>뉴스의 사실 관계와 저작권은 게시 전 확인해주세요.</span></footer>{notice && <div className="toast" role="status">{notice}<button onClick={() => setNotice('')} aria-label="알림 닫기">×</button></div>}
-    <div className="capture-container" aria-hidden="true">{slides.map((slide, i) => <div className="capture-item" key={i} ref={el => { captureRefs.current[i] = el; }}><Card slide={slide} index={i} theme={theme} category={category} brand={brand} capture/></div>)}</div>
+    <div className="capture-container" aria-hidden="true">{slides.map((slide, i) => <div className="capture-item" key={i} ref={el => { captureRefs.current[i] = el; }}><Card slide={slide} index={i} total={slides.length} theme={theme} category={category} brand={brand} capture/></div>)}</div>
   </main>;
 }
