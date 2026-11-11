@@ -5,12 +5,23 @@ import { timingSafeEqual } from 'node:crypto';
 
 export const runtime = 'nodejs';
 
-function authorized(req: NextRequest): boolean {
+function hasApiToken(req: NextRequest): boolean {
   const expected = process.env.TREND_STUDIO_API_TOKEN;
   const provided = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
   if (!expected || !provided) return false;
   const a = Buffer.from(provided); const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+async function authorized(req: NextRequest): Promise<boolean> {
+  if (hasApiToken(req)) return true;
+  const email = process.env.TREND_STUDIO_ADMIN_EMAIL?.trim().toLowerCase();
+  const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+  if (!email || !token) return false;
+  const db = database();
+  if (!db) return false;
+  const { data, error } = await db.auth.getUser(token);
+  return !error && Boolean(data.user?.email_confirmed_at) && data.user?.email?.toLowerCase() === email;
 }
 
 function database() {
@@ -20,7 +31,7 @@ function database() {
 }
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
+  if (!await authorized(req)) return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
   const db = database();
   if (!db) return NextResponse.json({ error: 'Supabase 연결 설정이 필요합니다.' }, { status: 503 });
   const { data, error } = await db.from('card_drafts').select('id,title,category,brand,source_urls,slides,status,created_at').order('created_at', { ascending: false }).limit(30);
@@ -29,7 +40,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
+  if (!await authorized(req)) return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
   const db = database();
   if (!db) return NextResponse.json({ error: 'Supabase 연결 설정이 필요합니다.' }, { status: 503 });
   let input: unknown;

@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getFontEmbedCSS, toBlob } from 'html-to-image';
 import JSZip from 'jszip';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, FileJson, Layers3, RotateCcw, Sparkles } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, FileJson, Layers3, LockKeyhole, LogOut, RotateCcw, Sparkles } from 'lucide-react';
 import { CardDraft, parseCardDraft, Slide } from '@/lib/content';
 
 type Theme = 'midnight' | 'paper' | 'citrus';
@@ -21,6 +22,12 @@ const themes: { id: Theme; name: string; description: string; colors: string[] }
   { id: 'paper', name: 'Editorial', description: '차분한 매거진 무드', colors: ['#eee9dd', '#172641', '#ba6244'] },
   { id: 'citrus', name: 'Citrus', description: '경쾌한 트렌드 브리핑', colors: ['#dbf66d', '#16221d', '#ff886a'] },
 ];
+
+const authUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const authKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const adminClient: SupabaseClient | null = authUrl && authKey
+  ? createClient(authUrl, authKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  : null;
 
 function Card({ slide, index, theme, category, brand, capture = false }: { slide: Slide; index: number; theme: Theme; category: string; brand: string; capture?: boolean }) {
   return (
@@ -48,12 +55,67 @@ export default function Studio() {
   const [notice, setNotice] = useState('');
   const [jsonText, setJsonText] = useState('');
   const [showImport, setShowImport] = useState(false);
-  const [apiToken, setApiToken] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
+  const [signedInEmail, setSignedInEmail] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
   const [remoteDrafts, setRemoteDrafts] = useState<{ id: string; title: string; category: string; brand: string; source_urls: string[]; slides: Slide[] }[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [sourceUrls, setSourceUrls] = useState<string[]>([]);
   const [storyTitle, setStoryTitle] = useState('AI가 보안 코드의 안전성을 증명했다고?');
   const captureRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    if (!adminClient) { setAuthChecking(false); return; }
+    let active = true;
+    adminClient.auth.getUser().then(({ data }) => {
+      if (active) { setSignedInEmail(data.user?.email ?? ''); setAuthChecking(false); }
+    }).catch(() => { if (active) setAuthChecking(false); });
+    const { data: listener } = adminClient.auth.onAuthStateChange((_event, session) => {
+      if (active) setSignedInEmail(session?.user.email ?? '');
+    });
+    return () => { active = false; listener.subscription.unsubscribe(); };
+  }, []);
+
+  async function loginAdmin(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!adminClient) { setNotice('관리자 로그인 환경변수 설정이 필요합니다.'); return; }
+    setAuthBusy(true);
+    try {
+      const { error } = await adminClient.auth.signInWithPassword({ email: adminEmail.trim(), password: adminPassword });
+      if (error) throw error;
+      setAdminPassword('');
+      setNotice('로그인했습니다. 이제 저장된 초안을 조회하거나 새 초안을 저장할 수 있습니다.');
+    } catch { setNotice('로그인에 실패했습니다. 이메일, 비밀번호 또는 계정 권한을 확인해주세요.'); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function logoutAdmin() {
+    await adminClient?.auth.signOut();
+    setRemoteDrafts([]);
+    setNotice('관리자 로그아웃했습니다.');
+  }
+
+  async function updateAdminPassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!adminClient || newPassword.length < 12) { setNotice('비밀번호는 12자 이상으로 설정해주세요.'); return; }
+    setAuthBusy(true);
+    const { error } = await adminClient.auth.updateUser({ password: newPassword });
+    setAuthBusy(false);
+    if (error) { setNotice('비밀번호 설정에 실패했습니다. 다시 시도해주세요.'); return; }
+    setNewPassword(''); setShowPasswordUpdate(false);
+    setNotice('비밀번호를 설정했습니다. 이제 관리자 계정으로 로그인할 수 있습니다.');
+  }
+
+  async function authHeader(): Promise<Record<string, string>> {
+    if (!adminClient) throw new Error('관리자 로그인 설정이 필요합니다.');
+    const { data, error } = await adminClient.auth.getSession();
+    if (error || !data.session) throw new Error('관리자 로그인이 필요합니다.');
+    return { Authorization: `Bearer ${data.session.access_token}` };
+  }
 
   const updateSlide = (key: keyof Slide, value: string) => setSlides(current => current.map((slide, i) => i === selected ? { ...slide, [key]: value } : slide));
   const fileName = (i: number) => `trend-studio-${String(i + 1).padStart(2, '0')}.png`;
@@ -77,15 +139,30 @@ export default function Studio() {
   }
 
   async function fetchDrafts() {
-    if (!apiToken.trim()) { setNotice('서버 연결 토큰을 입력해주세요.'); return; }
     setLoadingDrafts(true);
     try {
-      const response = await fetch('/api/drafts', { headers: { Authorization: `Bearer ${apiToken}` }, cache: 'no-store' });
+      const response = await fetch('/api/drafts', { headers: await authHeader(), cache: 'no-store' });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? '초안을 불러오지 못했습니다.');
       setRemoteDrafts(result.drafts ?? []);
       setNotice(`${result.drafts?.length ?? 0}개 초안을 조회했습니다.`);
     } catch (error) { setNotice(`서버 연결 실패: ${error instanceof Error ? error.message : '네트워크 오류'}`); }
+    finally { setLoadingDrafts(false); }
+  }
+
+  async function saveDraft() {
+    setLoadingDrafts(true);
+    try {
+      const payload: CardDraft = { title: storyTitle.trim() || slides[0].title, category, brand, sourceUrls, slides };
+      const response = await fetch('/api/drafts', {
+        method: 'POST', headers: { ...await authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? '초안을 저장하지 못했습니다.');
+      setNotice('초안을 저장했습니다. 기존 게시글을 수정한 경우 새 초안으로 저장됩니다.');
+      await fetchDrafts();
+    } catch (error) { setNotice(`저장 실패: ${error instanceof Error ? error.message : '네트워크 오류'}`); }
     finally { setLoadingDrafts(false); }
   }
 
@@ -168,8 +245,26 @@ export default function Studio() {
     <header className="header"><div className="logo"><div className="logo-icon"><Layers3 size={22} /></div><div><strong>trend<span>studio.</span></strong><small>CONTENT DESIGN WORKSPACE</small></div></div><div className="header-right"><span className="version">BETA / 0.1</span><span className="saved"><span /> Local preview</span></div></header>
     <section className="top-heading"><div><div className="eyebrow"><Sparkles size={14}/> YOUR CREATIVE WORKSPACE</div><h1>카드뉴스 스튜디오<span>.</span></h1><p>하나의 스토리를 다섯 장의 콘텐츠로. 원고를 다듬고, 스타일을 고르고, 바로 내보내세요.</p></div><button className="primary-button top-download" onClick={downloadAll} disabled={busy}><ArrowDownToLine size={17}/>{busy ? progress : '5장 전체 다운로드'}</button></section>
     <section className="import-panel panel">
-      <div className="import-panel-title"><div><span className="step-label">CONTENT PIPELINE</span><h2>ChatGPT 원고 가져오기</h2><p>JSON 붙여넣기로 바로 제작하거나, 서버에 등록된 초안을 선택하세요.</p></div><button className="import-toggle" onClick={() => setShowImport(open => !open)}><FileJson size={16}/>{showImport ? '가져오기 닫기' : 'JSON 가져오기'}</button></div>
-      {showImport && <div className="import-content"><div><label htmlFor="json-input">ChatGPT 원고 JSON</label><textarea id="json-input" value={jsonText} onChange={event => setJsonText(event.target.value)} placeholder='{"title":"뉴스 제목","category":"TECH / AI","slides":[...]}' rows={7}/><div className="import-buttons"><button onClick={importJson}>5장 카드에 적용</button><button onClick={exportJson}>현재 원고 JSON 내보내기</button></div></div><div><label htmlFor="api-token">서버 연결 토큰 (세션 동안만 유지)</label><input id="api-token" type="password" autoComplete="off" value={apiToken} onChange={event => setApiToken(event.target.value)} placeholder="TREND_STUDIO_API_TOKEN"/><button className="load-drafts" onClick={fetchDrafts} disabled={loadingDrafts}>{loadingDrafts ? '조회 중...' : '서버에 저장된 초안 조회'}</button><div className="draft-list">{remoteDrafts.map(draft => <button key={draft.id} onClick={() => { try { applyDraft(parseCardDraft({ title: draft.title, category: draft.category, brand: draft.brand, sourceUrls: draft.source_urls, slides: draft.slides })); setShowImport(false); } catch { setNotice('서버 초안 형식이 올바르지 않습니다.'); } }}>{draft.title}<small>{draft.category}</small></button>)}</div></div></div>}
+      <div className="import-panel-title"><div><span className="step-label">CONTENT PIPELINE</span><h2>ChatGPT 원고 가져오기</h2><p>JSON을 붙여넣거나 관리자 계정으로 로그인해 저장된 초안을 관리하세요.</p></div><button className="import-toggle" onClick={() => setShowImport(open => !open)}><FileJson size={16}/>{showImport ? '가져오기 닫기' : 'JSON 가져오기'}</button></div>
+      {showImport && <div className="import-content"><div><label htmlFor="json-input">ChatGPT 원고 JSON</label><textarea id="json-input" value={jsonText} onChange={event => setJsonText(event.target.value)} placeholder='{"title":"뉴스 제목","category":"TECH / AI","slides":[...]}' rows={7}/><div className="import-buttons"><button onClick={importJson}>5장 카드에 적용</button><button onClick={exportJson}>현재 원고 JSON 내보내기</button></div></div></div>}
+      <div className="admin-panel">
+        <div className="admin-panel-head"><span className="admin-icon"><LockKeyhole size={18}/></span><div><strong>관리자 스튜디오</strong><small>{signedInEmail ? `로그인: ${signedInEmail}` : '로그인 후 카드뉴스를 저장하고 관리할 수 있습니다.'}</small></div>{signedInEmail && <button className="admin-logout" onClick={logoutAdmin}><LogOut size={14}/> 로그아웃</button>}</div>
+        {authChecking ? <p className="admin-hint">로그인 상태 확인 중...</p> : !adminClient ? <p className="admin-hint">관리자 로그인을 사용하려면 Supabase 공개 연결 설정이 필요합니다.</p> : !signedInEmail ? (
+          <form className="admin-login" onSubmit={loginAdmin}>
+            <label>관리자 이메일<input type="email" autoComplete="username" required value={adminEmail} onChange={event => setAdminEmail(event.target.value)} placeholder="admin@example.com"/></label>
+            <label>비밀번호<input type="password" autoComplete="current-password" required value={adminPassword} onChange={event => setAdminPassword(event.target.value)} placeholder="비밀번호 입력"/></label>
+            <button className="admin-submit" type="submit" disabled={authBusy}>{authBusy ? '로그인 중...' : '관리자 로그인'}</button>
+          </form>
+        ) : (
+          <div className="admin-workspace">
+            <button className="admin-password-toggle" onClick={() => setShowPasswordUpdate(value => !value)}>{showPasswordUpdate ? '비밀번호 설정 닫기' : '초대받았나요? 비밀번호 설정·변경'}</button>
+            {showPasswordUpdate && <form className="admin-login admin-password-form" onSubmit={updateAdminPassword}><label>새 비밀번호 (12자 이상)<input type="password" autoComplete="new-password" minLength={12} required value={newPassword} onChange={event => setNewPassword(event.target.value)}/></label><button className="admin-submit" type="submit" disabled={authBusy}>{authBusy ? '설정 중...' : '비밀번호 설정'}</button></form>}
+            <label>게시글 제목<input maxLength={160} value={storyTitle} onChange={event => setStoryTitle(event.target.value)}/></label>
+            <div className="admin-buttons"><button onClick={saveDraft} disabled={loadingDrafts}>현재 5장 초안 저장</button><button onClick={fetchDrafts} disabled={loadingDrafts}>{loadingDrafts ? '처리 중...' : '저장된 초안 조회'}</button></div>
+            <div className="draft-list">{remoteDrafts.map(draft => <button key={draft.id} onClick={() => { try { applyDraft(parseCardDraft({ title: draft.title, category: draft.category, brand: draft.brand, sourceUrls: draft.source_urls, slides: draft.slides })); } catch { setNotice('서버 초안 형식이 올바르지 않습니다.'); } }}>{draft.title}<small>{draft.category}</small></button>)}</div>
+          </div>
+        )}
+      </div>
     </section>
     <section className="workspace">
       <aside className="panel editor-panel"><div className="panel-heading"><span className="step-label">01 / CONTENT EDITOR</span><h2>콘텐츠 편집</h2><p>카드를 선택하고 내용을 수정해보세요.</p></div>
