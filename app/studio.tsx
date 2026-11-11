@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { toPng } from 'html-to-image';
+import { getFontEmbedCSS, toBlob } from 'html-to-image';
 import JSZip from 'jszip';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, ChevronDown, Copy, Layers3, RotateCcw, Sparkles } from 'lucide-react';
 
@@ -44,17 +44,38 @@ export default function Studio() {
   const [category, setCategory] = useState('TECH / AI');
   const [brand, setBrand] = useState('TREND BRIEF');
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
   const [notice, setNotice] = useState('');
   const captureRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const updateSlide = (key: keyof Slide, value: string) => setSlides(current => current.map((slide, i) => i === selected ? { ...slide, [key]: value } : slide));
   const fileName = (i: number) => `trend-studio-${String(i + 1).padStart(2, '0')}.png`;
 
-  async function renderSlide(i: number) {
+  async function withTimeout<T>(task: Promise<T>, message: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([task, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), 20000);
+      })]);
+    } finally { if (timer) clearTimeout(timer); }
+  }
+
+  async function fontStyles() {
+    const element = captureRefs.current[0];
+    if (!element) throw new Error('카드 렌더링 요소를 찾지 못했습니다.');
+    // Font fetching is expensive; collect the styles once per export, not once per card.
+    return withTimeout(getFontEmbedCSS(element), '폰트 로딩 시간이 초과되었습니다. 다시 시도해주세요.');
+  }
+
+  async function renderSlide(i: number, fontEmbedCSS: string) {
     const element = captureRefs.current[i];
     if (!element) throw new Error('이미지 렌더링 요소를 찾을 수 없습니다.');
-    await document.fonts.ready;
-    return toPng(element, { pixelRatio: 1, width: 1080, height: 1350, cacheBust: true });
+    const blob = await withTimeout(
+      toBlob(element, { pixelRatio: 1, width: 1080, height: 1350, fontEmbedCSS }),
+      `${i + 1}번 카드의 렌더링 시간이 초과되었습니다.`,
+    );
+    if (!blob) throw new Error(`${i + 1}번 카드의 이미지 생성에 실패했습니다.`);
+    return blob;
   }
 
   function download(dataUrl: string, filename: string) {
@@ -64,26 +85,39 @@ export default function Studio() {
 
   async function downloadOne() {
     setBusy(true); setNotice('');
-    try { download(await renderSlide(selected), fileName(selected)); setNotice('현재 카드 PNG가 다운로드되었습니다.'); }
+    setProgress('폰트 준비 중...');
+    try {
+      const styles = await fontStyles();
+      setProgress('PNG 생성 중...');
+      const blob = await renderSlide(selected, styles);
+      const url = URL.createObjectURL(blob);
+      download(url, fileName(selected));
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setNotice('현재 카드 PNG가 다운로드되었습니다.');
+    }
     catch (error) { setNotice(`다운로드 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setProgress(''); }
   }
 
   async function downloadAll() {
     setBusy(true); setNotice('');
     try {
+      setProgress('폰트 준비 중...');
+      const styles = await fontStyles();
       const zip = new JSZip();
       for (let i = 0; i < slides.length; i++) {
-        const dataUrl = await renderSlide(i);
-        zip.file(fileName(i), dataUrl.split(',')[1], { base64: true });
+        setProgress(`${i + 1} / ${slides.length}장 이미지 생성 중...`);
+        const blob = await renderSlide(i, styles);
+        zip.file(fileName(i), blob);
       }
+      setProgress('ZIP 압축 중...');
       const blob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(blob);
       download(url, 'trend-studio-cards.zip');
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
       setNotice('카드 5장을 ZIP으로 다운로드했습니다.');
     } catch (error) { setNotice(`이미지 생성 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setProgress(''); }
   }
 
   async function copyContent() {
@@ -94,7 +128,7 @@ export default function Studio() {
 
   return <main className="app-shell">
     <header className="header"><div className="logo"><div className="logo-icon"><Layers3 size={22} /></div><div><strong>trend<span>studio.</span></strong><small>CONTENT DESIGN WORKSPACE</small></div></div><div className="header-right"><span className="version">BETA / 0.1</span><span className="saved"><span /> Local preview</span></div></header>
-    <section className="top-heading"><div><div className="eyebrow"><Sparkles size={14}/> YOUR CREATIVE WORKSPACE</div><h1>카드뉴스 스튜디오<span>.</span></h1><p>하나의 스토리를 다섯 장의 콘텐츠로. 원고를 다듬고, 스타일을 고르고, 바로 내보내세요.</p></div><button className="primary-button top-download" onClick={downloadAll} disabled={busy}><ArrowDownToLine size={17}/>{busy ? '이미지 생성 중...' : '5장 전체 다운로드'}</button></section>
+    <section className="top-heading"><div><div className="eyebrow"><Sparkles size={14}/> YOUR CREATIVE WORKSPACE</div><h1>카드뉴스 스튜디오<span>.</span></h1><p>하나의 스토리를 다섯 장의 콘텐츠로. 원고를 다듬고, 스타일을 고르고, 바로 내보내세요.</p></div><button className="primary-button top-download" onClick={downloadAll} disabled={busy}><ArrowDownToLine size={17}/>{busy ? progress : '5장 전체 다운로드'}</button></section>
     <section className="workspace">
       <aside className="panel editor-panel"><div className="panel-heading"><span className="step-label">01 / CONTENT EDITOR</span><h2>콘텐츠 편집</h2><p>카드를 선택하고 내용을 수정해보세요.</p></div>
         <div className="field-row"><label>카테고리<input maxLength={25} value={category} onChange={e => setCategory(e.target.value)}/></label><label>브랜드명<input maxLength={24} value={brand} onChange={e => setBrand(e.target.value)}/></label></div>
