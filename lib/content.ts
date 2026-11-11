@@ -14,6 +14,20 @@ export type CardDraft = {
   hashtags?: string;
 };
 
+/** Keep at most five distinct hashtags in their original order. */
+export function normalizeHashtags(value: string): string {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const match of value.matchAll(/#[^\s#,，]+/gu)) {
+    const tag = match[0].replace(/[.,!?;:]+$/u, '');
+    if (!tag || seen.has(tag.toLocaleLowerCase())) continue;
+    seen.add(tag.toLocaleLowerCase());
+    tags.push(tag);
+    if (tags.length === 5) break;
+  }
+  return tags.join(' ');
+}
+
 export function parseCardDraft(input: unknown): CardDraft {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('JSON 객체가 필요합니다.');
   const data = input as Record<string, unknown>;
@@ -50,7 +64,7 @@ export function parseCardDraft(input: unknown): CardDraft {
     sourceUrls: urls,
     slides,
     caption: typeof data.caption === 'string' ? data.caption.slice(0, 2200) : '',
-    hashtags: typeof data.hashtags === 'string' ? data.hashtags.slice(0, 500) : '',
+    hashtags: typeof data.hashtags === 'string' ? normalizeHashtags(data.hashtags.slice(0, 500)) : '',
   };
 }
 
