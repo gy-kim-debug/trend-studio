@@ -48,3 +48,9 @@ create unique index if not exists card_drafts_trend_id_unique on public.card_dra
 create index if not exists card_drafts_trend_id_idx on public.card_drafts(trend_id);
 alter table public.trend_candidates drop constraint if exists trend_candidates_production_status_check;
 alter table public.trend_candidates add constraint trend_candidates_production_status_check check (production_status in ('unmade','in_progress','completed','failed'));
+
+-- Instagram personal-account assisted publishing (no direct API posting).
+alter table public.card_drafts add column if not exists publish_status text not null default 'review';
+alter table public.card_drafts add column if not exists published_at timestamptz;
+alter table public.card_drafts drop constraint if exists card_drafts_publish_status_check;
+alter table public.card_drafts add constraint card_drafts_publish_status_check check (publish_status in ('review','ready','published','held'));
