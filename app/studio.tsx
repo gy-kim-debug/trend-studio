@@ -26,7 +26,7 @@ const themes: { id: Theme; name: string; description: string; colors: string[] }
 const authUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const authKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const adminClient: SupabaseClient | null = authUrl && authKey
-  ? createClient(authUrl, authKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
+  ? createClient(authUrl, authKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 
 function Card({ slide, index, theme, category, brand, capture = false }: { slide: Slide; index: number; theme: Theme; category: string; brand: string; capture?: boolean }) {
@@ -57,6 +57,8 @@ export default function Studio() {
   const [showImport, setShowImport] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
   const [signedInEmail, setSignedInEmail] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
@@ -95,6 +97,17 @@ export default function Studio() {
     await adminClient?.auth.signOut();
     setRemoteDrafts([]);
     setNotice('관리자 로그아웃했습니다.');
+  }
+
+  async function updateAdminPassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!adminClient || newPassword.length < 12) { setNotice('비밀번호는 12자 이상으로 설정해주세요.'); return; }
+    setAuthBusy(true);
+    const { error } = await adminClient.auth.updateUser({ password: newPassword });
+    setAuthBusy(false);
+    if (error) { setNotice('비밀번호 설정에 실패했습니다. 다시 시도해주세요.'); return; }
+    setNewPassword(''); setShowPasswordUpdate(false);
+    setNotice('비밀번호를 설정했습니다. 이제 관리자 계정으로 로그인할 수 있습니다.');
   }
 
   async function authHeader(): Promise<Record<string, string>> {
@@ -244,6 +257,8 @@ export default function Studio() {
           </form>
         ) : (
           <div className="admin-workspace">
+            <button className="admin-password-toggle" onClick={() => setShowPasswordUpdate(value => !value)}>{showPasswordUpdate ? '비밀번호 설정 닫기' : '초대받았나요? 비밀번호 설정·변경'}</button>
+            {showPasswordUpdate && <form className="admin-login admin-password-form" onSubmit={updateAdminPassword}><label>새 비밀번호 (12자 이상)<input type="password" autoComplete="new-password" minLength={12} required value={newPassword} onChange={event => setNewPassword(event.target.value)}/></label><button className="admin-submit" type="submit" disabled={authBusy}>{authBusy ? '설정 중...' : '비밀번호 설정'}</button></form>}
             <label>게시글 제목<input maxLength={160} value={storyTitle} onChange={event => setStoryTitle(event.target.value)}/></label>
             <div className="admin-buttons"><button onClick={saveDraft} disabled={loadingDrafts}>현재 5장 초안 저장</button><button onClick={fetchDrafts} disabled={loadingDrafts}>{loadingDrafts ? '처리 중...' : '저장된 초안 조회'}</button></div>
             <div className="draft-list">{remoteDrafts.map(draft => <button key={draft.id} onClick={() => { try { applyDraft(parseCardDraft({ title: draft.title, category: draft.category, brand: draft.brand, sourceUrls: draft.source_urls, slides: draft.slides })); } catch { setNotice('서버 초안 형식이 올바르지 않습니다.'); } }}>{draft.title}<small>{draft.category}</small></button>)}</div>
