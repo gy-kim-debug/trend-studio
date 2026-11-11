@@ -1,4 +1,9 @@
-export type Slide = { kicker: string; title: string; body: string; imagePath?: string; imageUrl?: string; layout?: 'text' | 'image' | 'split' };
+export type Slide = {
+  kicker: string; title: string; body: string;
+  imagePath?: string; imageUrl?: string; layout?: 'text' | 'image' | 'split';
+  imageMode?: 'none' | 'official_image' | 'ai_concept';
+  imagePrompt?: string; imageSourceUrl?: string; imageNote?: string;
+};
 export type CardDraft = {
   title: string;
   category: string;
@@ -27,6 +32,10 @@ export function parseCardDraft(input: unknown): CardDraft {
       body: text(slide.body, `${i + 1}번 본문`, 350),
       ...(typeof slide.imagePath === 'string' && /^cards\/[a-f0-9-]{36}\.(png|jpg|webp)$/.test(slide.imagePath) ? { imagePath: slide.imagePath } : {}),
       layout: (slide.layout === 'image' || slide.layout === 'split' ? slide.layout : 'text') as Slide['layout'],
+      imageMode: (slide.imageMode === 'official_image' || slide.imageMode === 'ai_concept' ? slide.imageMode : 'none') as Slide['imageMode'],
+      imagePrompt: typeof slide.imagePrompt === 'string' ? slide.imagePrompt.slice(0, 1200) : '',
+      imageSourceUrl: typeof slide.imageSourceUrl === 'string' && /^https:\/\//.test(slide.imageSourceUrl) ? slide.imageSourceUrl.slice(0, 2048) : '',
+      imageNote: typeof slide.imageNote === 'string' ? slide.imageNote.slice(0, 500) : '',
     };
   });
   const urls = data.sourceUrls === undefined ? [] : data.sourceUrls;
@@ -42,4 +51,33 @@ export function parseCardDraft(input: unknown): CardDraft {
     caption: typeof data.caption === 'string' ? data.caption.slice(0, 2200) : '',
     hashtags: typeof data.hashtags === 'string' ? data.hashtags.slice(0, 500) : '',
   };
+}
+
+/** Accept a single draft, a drafts array, or the scheduled ChatGPT imagePlan bundle. */
+export function parseImportBundle(input: unknown): CardDraft[] {
+  const root = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : null;
+  const raw = Array.isArray(input) ? input : root?.drafts ?? root?.candidates ?? (root?.draft ? [root.draft] : [input]);
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 10) throw new Error('가져올 원고는 한 번에 1~10개여야 합니다.');
+  return raw.map((item, draftIndex) => {
+    const wrapper = item && typeof item === 'object' && !Array.isArray(item) ? item as Record<string, unknown> : {};
+    const rawDraft = wrapper.draft && typeof wrapper.draft === 'object' ? wrapper.draft : item;
+    const data = rawDraft && typeof rawDraft === 'object' && !Array.isArray(rawDraft) ? rawDraft as Record<string, unknown> : {};
+    const plan = Array.isArray(wrapper.imagePlan) ? wrapper.imagePlan : Array.isArray(data.imagePlan) ? data.imagePlan : [];
+    const slides = Array.isArray(data.slides) ? data.slides.map((rawSlide, i) => {
+      const s = rawSlide && typeof rawSlide === 'object' && !Array.isArray(rawSlide) ? rawSlide as Record<string, unknown> : {};
+      const suggestion = plan.find((entry: unknown) => {
+        const p = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : {};
+        return p.slide === i + 1 || p.slideIndex === i || p.index === i + 1;
+      }) as Record<string, unknown> | undefined;
+      return { ...s, ...(suggestion ? {
+        imageMode: suggestion.imageMode ?? s.imageMode,
+        imagePrompt: suggestion.prompt ?? suggestion.imagePrompt ?? s.imagePrompt,
+        imageSourceUrl: suggestion.sourceUrl ?? s.imageSourceUrl,
+        imageNote: suggestion.note ?? suggestion.rightsNote ?? s.imageNote,
+        layout: suggestion.layout ?? s.layout,
+      } : {}) };
+    }) : data.slides;
+    try { return parseCardDraft({ ...data, slides }); }
+    catch (error) { throw new Error(`${draftIndex + 1}번 원고: ${error instanceof Error ? error.message : '형식 오류'}`); }
+  });
 }

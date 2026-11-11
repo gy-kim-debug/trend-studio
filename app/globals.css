@@ -111,3 +111,18 @@
 .page-refresh{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;background:#fff;border:1px solid #dce3f0;border-radius:9px;color:#304b80;font-size:11px;font-weight:800;letter-spacing:0;white-space:nowrap}
 .page-refresh:hover{background:#eef2ff;border-color:#a9bbef}
 @media(max-width:760px){.header-right{gap:7px}.page-refresh{padding:9px}.page-refresh span{display:none}.version{font-size:9px}.news-card.cover-card.visual-card .card-content h2{font-size:clamp(31px,8vw,45px)}}
+
+/* Review inbox and ChatGPT image recommendations. */
+.import-content{grid-template-columns:1fr}
+.import-buttons{flex-wrap:wrap}
+.import-tip{font-size:11px;color:#79869b;line-height:1.65;margin:10px 0 0}
+.draft-readiness{display:flex;flex-wrap:wrap;gap:6px;margin:1px 0 15px}
+.draft-readiness span{border-radius:100px;padding:6px 9px;font-size:10px;font-weight:800}
+.readiness-ok{background:#eaf9ef;color:#27744c}
+.readiness-warn{background:#fff2dc;color:#956006}
+.image-brief{background:#f2f6ff;border:1px solid #d8e3fe;border-radius:11px;padding:14px;display:grid;gap:9px}
+.image-brief strong{font-size:12px;color:#2e4c8c}
+.image-brief p{font-size:11px;line-height:1.7;color:#506383;margin:0;overflow-wrap:anywhere}
+.image-brief a{display:flex;align-items:center;gap:5px;font-size:11px;color:#2759b8;text-decoration:underline}
+.image-pending{font-size:10px;color:#955d15;font-weight:800}
+@media(max-width:760px){.import-buttons{display:grid;grid-template-columns:1fr}.import-buttons button{width:100%}}
