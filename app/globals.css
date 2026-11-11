@@ -134,3 +134,14 @@
 .production-in_progress{background:#fff3d8;color:#8e650f}.production-completed{background:#e8f8ee;color:#26764a}.production-failed{background:#fff0ef;color:#aa4034}
 .trend-apply:disabled{opacity:.55;cursor:not-allowed}
 @media(max-width:760px){.trend-status-line{flex-wrap:wrap}.production-status{font-size:10px}}
+
+/* Assisted Instagram publishing for personal accounts. */
+.instagram-publish-panel{margin:20px 0;padding:16px;border:1px solid #cbd9fa;background:#f2f6ff;border-radius:14px;display:grid;gap:12px}
+.instagram-publish-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.instagram-publish-head strong{font-size:15px;color:#243e77}.instagram-publish-head p{font-size:11px;color:#526585;line-height:1.6;margin:5px 0 0}
+.instagram-publish-actions{display:grid;gap:8px}.instagram-publish-actions button{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;border:1px solid #b6c8ef;border-radius:9px;background:white;color:#264988;font-weight:700;font-size:12px}
+.instagram-publish-actions button:disabled,.instagram-publish-status button:disabled{opacity:.5;cursor:not-allowed}
+.instagram-publish-help,.instagram-publish-panel small{color:#61738c;font-size:11px;line-height:1.7;margin:0}
+.instagram-publish-status{display:flex;flex-wrap:wrap;gap:8px}.instagram-publish-status button{border:1px solid #bfd0ee;border-radius:8px;padding:9px 10px;background:#fff;color:#284570;font-size:11px;font-weight:800}.instagram-publish-status button:nth-child(2){background:#294d91;color:#fff}
+.publish-status{white-space:nowrap;border-radius:999px;padding:5px 9px;font-size:10px;font-weight:800;background:#fff1d7;color:#865c0e}
+.publish-ready{background:#e9f8ed;color:#207544}.publish-published{background:#e7efff;color:#2356a1}.publish-held{background:#eceff3;color:#66717c}
