@@ -351,7 +351,7 @@ export default function Studio() {
   const visibleTrends = dateFilter === 'all' ? trendRows : trendRows.filter(item => koreanDate(item.created_at) === dateFilter);
 
   return <main className="app-shell">
-    <header className="header"><div className="logo"><div className="logo-icon"><Layers3 size={22} /></div><div><strong>trend<span>studio.</span></strong><small>CONTENT DESIGN WORKSPACE</small></div></div><div className="header-right"><span className="version">BETA / 0.1</span><span className="saved"><span /> Local preview</span></div></header>
+    <header className="header"><div className="logo"><div className="logo-icon"><Layers3 size={22} /></div><div><strong>trend<span>studio.</span></strong><small>CONTENT DESIGN WORKSPACE</small></div></div><div className="header-right"><span className="version">BETA / 0.1</span><span className="saved"><span /> Local preview</span><button className="page-refresh" type="button" title="페이지 전체 새로고침" aria-label="페이지 새로고침" onClick={() => window.location.reload()}><RefreshCw size={17}/><span>새로고침</span></button></div></header>
     <nav className="studio-tabs" aria-label="스튜디오 메뉴">
       <button className={view === 'trends' ? 'active' : ''} aria-current={view === 'trends' ? 'page' : undefined} onClick={() => setView('trends')}><TrendingUp size={18}/> 트렌드 탐색</button>
       <button className={view === 'drafts' ? 'active' : ''} aria-current={view === 'drafts' ? 'page' : undefined} onClick={() => setView('drafts')}><Newspaper size={18}/> 내 게시글</button>
