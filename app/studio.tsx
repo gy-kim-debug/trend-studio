@@ -51,7 +51,7 @@ function Card({ slide, index, total, theme, brand, capture = false }: { slide: S
         <h2>{slide.title || '제목을 입력하세요'}</h2>
         <p className="card-body">{slide.body || '본문을 입력하세요.'}</p>
       </div>
-      <div className="card-bottom"><span>{brand || 'TREND STUDIO'}</span><span className="card-arrow">↗</span></div>
+      <div className="card-bottom" style={{ justifyContent: 'flex-end' }}><span className="card-arrow">↗</span></div>
     </article>
   );
 }
