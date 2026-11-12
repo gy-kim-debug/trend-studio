@@ -160,3 +160,13 @@
 .preview-mode-note{color:#64738c;font-size:11px;line-height:1.6;text-align:center;margin-top:12px}
 .actual-preview-button{align-self:center;margin-top:9px;border:1px solid #a9bff1;border-radius:9px;background:#eaf1ff;color:#264d92;font-size:12px;font-weight:800;padding:11px 17px}
 .actual-preview-button:disabled{opacity:.55;cursor:wait}
+
+/* Keep user-entered line breaks in all text layers in both the editor preview
+   and the full-size HTML-to-image export. */
+.news-card .card-kicker,
+.news-card .card-content h2,
+.news-card .card-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.edit-fields textarea { resize: vertical; }
