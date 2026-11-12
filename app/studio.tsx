@@ -38,13 +38,13 @@ const adminClient: SupabaseClient | null = authUrl && authKey
   ? createClient(authUrl, authKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 
-function Card({ slide, index, total, theme, category, brand, capture = false }: { slide: Slide; index: number; total: number; theme: Theme; category: string; brand: string; capture?: boolean }) {
+function Card({ slide, index, total, theme, brand, capture = false }: { slide: Slide; index: number; total: number; theme: Theme; category: string; brand: string; capture?: boolean }) {
   const visual = Boolean(slide.imageUrl && slide.layout !== 'text');
   const backgroundCover = visual && index === 0 && slide.layout === 'background';
   return (
     <article className={`news-card theme-${theme} ${index === 0 ? 'cover-card' : 'body-card'} ${visual ? `visual-card visual-${slide.layout}` : ''} ${backgroundCover ? 'cover-background' : ''}`} data-capture={capture ? 'true' : undefined}>
       <div className="card-shape shape-one" /><div className="card-shape shape-two" />
-      <div className="card-top"><span className="card-tag">{category || 'TREND'}</span><span className="card-number">{String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div>
+      <div className="card-top" style={{ justifyContent: 'flex-end' }}><span className="card-number">{String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div>
       {visual && <div className="card-media"><img src={slide.imageUrl} alt="카드에 첨부한 이미지" crossOrigin="anonymous" style={{ objectFit: backgroundCover ? 'cover' : (slide.imageFit ?? 'contain') }} /></div>}
       <div className="card-content">
         <div className="card-rule" /><p className="card-kicker">{slide.kicker || 'THE STORY'}</p>
