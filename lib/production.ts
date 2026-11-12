@@ -113,6 +113,7 @@ async function produceOne(db: SupabaseClient, item: Candidate) {
     const slides: Slide[] = [];
     const credits: string[] = [];
     let missing = 0;
+    let ready = 0;
     // Limit paid image generations and external downloads per story.
     let attempted = 0;
     for (const slide of source.slides) {
@@ -125,7 +126,7 @@ async function produceOne(db: SupabaseClient, item: Candidate) {
       attempted++;
       const made = await prepareSlide(db, slide);
       slides.push(made.slide);
-      if (!made.ready) missing++;
+      if (!made.ready) missing++; else if (made.slide.imagePath) ready++;
       if (made.attribution) credits.push(made.attribution);
     }
     let caption = source.caption ?? '';
@@ -142,7 +143,7 @@ async function produceOne(db: SupabaseClient, item: Candidate) {
     if (error || !row) throw new Error(error?.message || '초안 저장 실패');
     const {error: linkError} = await db.from('trend_candidates').update({production_status:'completed', linked_draft_id:row.id}).eq('id',item.id);
     if (linkError) throw new Error('초안 연결 실패: ' + linkError.message);
-    return {title:item.title,status:'draft_saved',draftId:row.id,imagesPending:missing};
+    return {title:item.title,status:'draft_saved',draftId:row.id,imagesReady:ready,imagesPending:missing};
   } catch (error) {
     const {data: existing} = await db.from('card_drafts').select('id').eq('trend_id',item.id).maybeSingle();
     if (existing) {
@@ -151,7 +152,7 @@ async function produceOne(db: SupabaseClient, item: Candidate) {
     }
     await db.from('trend_candidates').update({production_status:'failed'}).eq('id',item.id);
     console.error('Trend production error:', item.id, error instanceof Error ? error.message : String(error));
-    return {title:item.title,status:'failed'};
+    return {title:item.title,status:'failed',error:error instanceof Error ? error.message.slice(0,180) : '알 수 없는 오류'};
   }
 }
 export async function produceToday(): Promise<{results: unknown[]; error?: string}> {
