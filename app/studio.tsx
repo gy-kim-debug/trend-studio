@@ -14,6 +14,8 @@ type RenderedPreview = { signature: string; url: string; blob: Blob };
 type TrendRow = { id: string; title: string; category: string; summary: string; why_now: string; buzz_score: number; value_score: number; source_urls: string[]; draft: CardDraft; created_at: string; production_status?: 'unmade' | 'in_progress' | 'completed' | 'failed'; linked_draft_id?: string | null };
 type StudioView = 'trends' | 'drafts' | 'editor';
 type PublishStatus = 'review' | 'ready' | 'published' | 'held';
+type ProductionResult = { title: string; status: string; draftId?: string; imagesReady?: number; imagesPending?: number; error?: string };
+type RunSummary = { collectionStatus: number; collected?: number; results: ProductionResult[]; message?: string };
 const publishLabels: Record<PublishStatus,string> = { review: '검토 대기', ready: '게시 준비', published: '게시 완료', held: '보류' };
 
 const koreanDate = (date: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(date));
@@ -90,6 +92,9 @@ export default function Studio() {
   const [publishStatus, setPublishStatus] = useState<PublishStatus>('review');
   const [publishBusy, setPublishBusy] = useState(false);
   const [loadingTrends, setLoadingTrends] = useState(false);
+  const [runningProduction, setRunningProduction] = useState(false);
+  const [productionResult, setProductionResult] = useState<RunSummary | null>(null);
+  const [productionError, setProductionError] = useState('');
   const [sourceUrls, setSourceUrls] = useState<string[]>([]);
   const [storyTitle, setStoryTitle] = useState('AI가 보안 코드의 안전성을 증명했다고?');
   const [caption, setCaption] = useState('');
@@ -274,6 +279,34 @@ export default function Studio() {
       setNotice(next === 'published' ? '게시 완료로 기록했습니다. 인스타그램 실제 발행 여부는 직접 확인해주세요.' : `${publishLabels[next]} 상태로 저장했습니다.`);
     } catch (error) { setNotice(`게시 상태 저장 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`); }
     finally { setPublishBusy(false); }
+  }
+
+  async function runProductionNow() {
+    if (runningProduction) return;
+    setRunningProduction(true);
+    setProductionError('');
+    setProductionResult(null);
+    setNotice('트렌드 수집·이미지 준비·초안 저장을 운영 서버에서 실행 중입니다. 이 페이지를 유지해주세요.');
+    try {
+      const response = await fetch('/api/trends/collect', {
+        method: 'POST',
+        headers: await authHeader(),
+        cache: 'no-store',
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? result.message ?? '자동 제작 요청 실패');
+      setProductionResult(result as RunSummary);
+      setTrendsLoaded(false);
+      setDraftsLoaded(false);
+      await Promise.all([fetchTrends(), fetchDrafts()]);
+      setNotice('자동 제작 실행 결과를 아래에서 확인해주세요. 이미지와 원고는 내 게시글에서 검토할 수 있습니다.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '네트워크 오류';
+      setProductionError(message);
+      setNotice('자동 제작 실패: ' + message);
+    } finally {
+      setRunningProduction(false);
+    }
   }
 
   async function fetchTrends() {
@@ -558,7 +591,24 @@ export default function Studio() {
       </div>
     </section>
     {view === 'trends' && <section className="collection-page">
-      <div className="collection-header"><div><span className="step-label">DAILY TREND RADAR</span><h1>오늘의 트렌드<span>.</span></h1><p>정보 가치 55% · 화제성 30% · 시각적 매력 15%를 기준으로 검토합니다.</p></div><button className="collection-refresh" disabled={loadingTrends || !signedInEmail} onClick={fetchTrends}><RefreshCw size={16}/>{loadingTrends ? '조회 중...' : '새로고침'}</button></div>
+      <div className="collection-header"><div><span className="step-label">DAILY TREND RADAR</span><h1>오늘의 트렌드<span>.</span></h1><p>정보 가치 55% · 화제성 30% · 시각적 매력 15%를 기준으로 검토합니다.</p></div><div className="collection-controls" style={{display:'flex',gap:8,flexWrap:'wrap'}}><button className="collection-refresh" disabled={runningProduction || !signedInEmail} onClick={() => void runProductionNow()}><Sparkles size={16}/>{runningProduction ? '자동 제작 실행 중…' : '지금 자동 제작 실행'}</button><button className="collection-refresh" disabled={loadingTrends || runningProduction || !signedInEmail} onClick={fetchTrends}><RefreshCw size={16}/>{loadingTrends ? '조회 중...' : '새로고침'}</button></div></div>
+      {signedInEmail && <section className="panel" aria-live="polite" style={{padding:16,marginBottom:16}}>
+        <strong>운영 서버 자동 제작 테스트</strong>
+        <p>이 버튼은 실제 운영 서버에서 트렌드 수집 → 사용 가능한 이미지 준비 → 검토 초안 저장을 수행합니다. 이미 수집한 오늘의 뉴스는 중복 생성하지 않습니다. 실제 이미지 재사용 권한이 확인되지 않으면 수동 검토 대상으로 남깁니다.</p>
+        {runningProduction && <p role="status">제작 중입니다. AI 검색·이미지 생성에는 시간이 걸릴 수 있습니다.</p>}
+        {productionError && <p role="alert" style={{color:'#e85b5b'}}>실행 실패: {productionError}</p>}
+        {productionResult && <div>
+          <p><strong>{productionResult.collectionStatus === 409 ? '오늘 수집된 트렌드 재사용' : '트렌드 신규 수집 요청 완료'}</strong> · {productionResult.message ?? '자동 제작 결과'}</p>
+          {productionResult.results.length === 0 ? <p>새로 제작할 미완료 후보가 없습니다. 내 게시글 목록과 오늘의 트렌드 상태를 확인해주세요.</p> :
+            <ul>{productionResult.results.map((item,index) => <li key={item.draftId ?? item.title + index}>
+              <strong>{item.title}</strong> · {item.status === 'draft_saved' ? '초안 저장 완료' : item.status === 'skipped' ? '이미 처리 중/제작됨' : '제작 실패'}
+              {typeof item.imagesReady === 'number' && ` · 이미지 준비 ${item.imagesReady}장`}
+              {typeof item.imagesPending === 'number' && ` · 이미지 검토 필요 ${item.imagesPending}장`}
+              {item.error && ` · 사유: ${item.error}`}
+            </li>)}</ul>}
+          <button className="collection-refresh" onClick={() => {setView('drafts');setDraftsLoaded(false); void fetchDrafts();}}>내 게시글에서 결과 확인</button>
+        </div>}
+      </section>}
       {signedInEmail ? <><div className="collection-controls"><div><strong>{visibleTrends.length}개 트렌드</strong><small>출처와 선정 이유를 확인한 후 편집하세요.</small></div><label><CalendarDays size={16}/><select aria-label="수집 날짜" value={dateFilter} onChange={e => setDateFilter(e.target.value)}><option value="all">전체 날짜</option>{days.map(day => <option key={day} value={day}>{day}</option>)}</select></label></div>
         {trendsLoaded && visibleTrends.length === 0 && <div className="collection-empty">{dateFilter === 'all' ? '아직 저장된 트렌드가 없습니다.' : '선택한 날짜에 수집된 트렌드가 없습니다.'}</div>}
         <div className="trend-grid">{visibleTrends.map(trend => <article className="trend-item" key={trend.id}>
