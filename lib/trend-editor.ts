@@ -37,7 +37,7 @@ AI·테크, SNS 문화, 캐릭터, 라이프스타일, 브랜드·제품, 엔터
 - 진짜 제품·행사·인물·캐릭터의 모습을 설명하려면 imageMode='official_image'. imagePrompt에는 Wikimedia Commons에서 실물 사진을 검색할 때 쓰는 명확한 영어 검색어(주제 고유명사 우선)를 넣고, imageSourceUrl에는 해당 실물 정보의 공식 발표/제품 페이지 URL을 제시하세요. 출처 링크가 재게시 허가를 뜻하지 않음을 imageNote에 명시하세요. 사용 허가 불명인 이미지는 자동 저장 대상이 아니고 검토용으로 남습니다. AI로 가짜 제품 사진을 만드는 식으로 대체하지 마세요.
 - 개념을 시각화하는 게 적절할 때만 imageMode='ai_concept'. imagePrompt는 거짓 브랜드 로고·실제 앱 화면·실제 사람 재현을 피하는 구체적인 비주얼 생성 지시문, imageNote는 AI 콘셉트 이미지 표기. 실제 이미지가 필요한 콘텐츠를 AI 이미지로 위장하지 마세요.
 - 이미지가 정보 전달에 불필요하면 imageMode='none', layout='text'.
-- layout은 text/image/split/background 중 하나. background는 첫 카드에서만 가능. 최소한 표지 한 장은 image 또는 split 또는 background 이미지 배치를 적극 고려하되 허위 시각자료는 만들지 마세요.
+- layout은 text/image/background/frame/split/grid/product/data/meme 중 하나. 이미지 특성과 카드 역할에 맞게 선택하세요. grid는 여러 이미지를 합성한 파일에 적합합니다. 최소한 표지 한 장은 image 또는 split 또는 background 이미지 배치를 적극 고려하되 허위 시각자료는 만들지 마세요.
 - sourceUrls는 뉴스 사실 검증 URL, imageSourceUrl은 실제 물체의 출처. 업로드하지 않은 이미지에는 imagePath/imageUrl을 만들어 넣지 마세요.
 - caption은 사용자가 그대로 게시할 완결된 문장과 출처, 참여 유도 질문을 포함해야 합니다.
 JSON만 출력하세요. 정확한 형식:

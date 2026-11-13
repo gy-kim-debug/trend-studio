@@ -1,6 +1,6 @@
 export type Slide = {
   kicker: string; title: string; body: string;
-  imagePath?: string; imageUrl?: string; layout?: 'text' | 'image' | 'split' | 'background'; imageFit?: 'contain' | 'cover';
+  imagePath?: string; imageUrl?: string; layout?: 'text' | 'image' | 'split' | 'background' | 'frame' | 'grid' | 'product' | 'data' | 'meme'; imageFit?: 'contain' | 'cover';
   imageMode?: 'none' | 'official_image' | 'ai_concept';
   imagePrompt?: string; imageSourceUrl?: string; imageNote?: string;
 };
@@ -45,7 +45,7 @@ export function parseCardDraft(input: unknown): CardDraft {
       title: text(slide.title, `${i + 1}번 제목`, 110),
       body: text(slide.body, `${i + 1}번 본문`, 350),
       ...(typeof slide.imagePath === 'string' && /^cards\/[a-f0-9-]{36}\.(png|jpg|webp)$/.test(slide.imagePath) ? { imagePath: slide.imagePath } : {}),
-      layout: (slide.layout === 'image' || slide.layout === 'split' || (i === 0 && slide.layout === 'background') ? slide.layout : 'text') as Slide['layout'],
+      layout: (typeof slide.layout === 'string' && ['text','image','split','background','frame','grid','product','data','meme'].includes(slide.layout) ? slide.layout : 'text') as Slide['layout'],
       imageFit: (slide.imageFit === 'cover' ? 'cover' : 'contain') as Slide['imageFit'],
       imageMode: (slide.imageMode === 'official_image' || slide.imageMode === 'ai_concept' ? slide.imageMode : 'none') as Slide['imageMode'],
       imagePrompt: typeof slide.imagePrompt === 'string' ? slide.imagePrompt.slice(0, 1200) : '',
